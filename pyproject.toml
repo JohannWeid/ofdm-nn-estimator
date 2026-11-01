@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ofdm-nn-estimator"
+version = "0.1.0"
+description = "Neural OFDM channel estimation with embedded (int8 / C++) deployment"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Johann Weid" }]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Phase 3/4: training, ONNX export and quantization (CPU-only is enough).
+nn = ["torch>=2.2", "onnx>=1.16", "onnxruntime>=1.18"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "NPY"]

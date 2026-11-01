@@ -1,0 +1,40 @@
+# Default link-level configuration (LTE-like, simplified).
+# Every script reads this file, so a figure is fully defined by config + seed.
+
+seed: 42
+
+ofdm:
+  n_fft: 128                    # FFT size -> sample rate = 128 * 15 kHz = 1.92 MHz
+  n_subcarriers: 72             # active subcarriers (6 resource blocks)
+  n_symbols: 14                 # OFDM symbols per slot (1 ms)
+  cp_length: 9                  # cyclic prefix in samples (~4.7 us)
+  subcarrier_spacing_hz: 15000.0
+  modulation: qpsk              # qpsk | 16qam
+
+pilots:
+  # Lattice ("Gitter") pattern similar to LTE CRS port 0.
+  # Block pattern: symbols [0], spacing 1.  Comb pattern: all symbols, spacing N.
+  symbols: [0, 4, 7, 11]
+  spacing: 6
+  offsets: [0, 3, 0, 3]         # frequency offset per pilot symbol (staggered)
+  seed: 1234                    # fixed QPSK pilot sequence
+
+channel:
+  n_sinusoids: 16               # sum-of-sinusoids Rayleigh fading per tap (Jakes spectrum)
+  max_taps: 32
+  pdp_floor_db: -30.0           # truncate the exponential power delay profile here
+
+# Channel regions. Each slot draws its delay spread and Doppler uniformly from a range.
+# Region A: training and in-distribution test.  Region B: deliberately different test set.
+regions:
+  A:
+    delay_spread_us: [0.1, 0.6]
+    doppler_hz: [0.0, 150.0]
+  B:
+    delay_spread_us: [0.9, 1.3]
+    doppler_hz: [300.0, 600.0]
+
+evaluation:
+  snr_db: [0, 5, 10, 15, 20, 25, 30]
+  n_slots: 1000                 # slots per SNR point
+  batch_size: 100
