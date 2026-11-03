@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+from pathlib import Path
+
 import torch
+
+from .config import ModelConfig
 
 
 class ResidualCNN(torch.nn.Module):
@@ -39,6 +44,23 @@ class ResidualCNN(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = x if self.use_snr else x[:, :2]
         return x[:, :2] + self.body(features)
+
+
+def build_model(cfg: ModelConfig) -> ResidualCNN:
+    return ResidualCNN(cfg.channels, cfg.layers, cfg.kernel_size, cfg.use_snr)
+
+
+def save_model(model: ResidualCNN, cfg: ModelConfig, path: str | Path) -> None:
+    """Store weights together with the architecture, so load_model needs nothing else."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"model_config": asdict(cfg), "state_dict": model.state_dict()}, path)
+
+
+def load_model(path: str | Path) -> ResidualCNN:
+    checkpoint = torch.load(path, weights_only=True)
+    model = build_model(ModelConfig(**checkpoint["model_config"]))
+    model.load_state_dict(checkpoint["state_dict"])
+    return model.eval()
 
 
 def count_parameters(model: torch.nn.Module) -> int:

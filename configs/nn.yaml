@@ -1,0 +1,23 @@
+# Neural estimator: data, model and training.
+# OFDM, pilot and channel settings come from default.yaml.
+
+seed: 0                       # weight init and batch shuffling
+
+data:
+  region: A
+  snr_db: [0.0, 30.0]         # each slot draws its SNR uniformly from this range
+  train: {n_slots: 32000, seed: 100}
+  val: {n_slots: 4000, seed: 101}
+  # test sets for the evaluation: A seed 102, B seed 103 (never used for training)
+
+model:
+  channels: 16
+  layers: 4
+  kernel_size: 3
+  use_snr: true
+
+training:
+  batch_size: 128
+  lr: 1.0e-3
+  max_epochs: 100
+  patience: 10                # stop after this many epochs without a better val loss
