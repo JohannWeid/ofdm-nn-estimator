@@ -1,18 +1,19 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
-> **Status: work in progress.** Simulator, baselines, training data pipeline and CNN model
-> are done. Training and evaluation of the neural estimator come next.
+> **Status: work in progress.** The CNN is trained and evaluated. Ablations, a failure map
+> and int8/C++ deployment come next.
 
-**Result (to be filled in):** A small CNN refines the interpolated least-squares channel
-estimate of an LTE-like OFDM link. It is compared against LS with linear and spline
-interpolation and against LMMSE with known channel statistics, both on channels like the
-training data and on deliberately different ones, and then quantized to int8 and run in C++.
+**Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
+the LS + linear channel estimate by 5.4 dB NMSE at 10 dB SNR, which is 1.1 dB SNR at a BER
+of 1e-2 and 0.8 dB short of LMMSE with exact channel statistics. Its gain shrinks to 0.3 dB
+at 30 dB SNR. On channels it has never seen (larger delay spread, higher Doppler) it only
+helps below about 10 dB SNR and is up to 1.8 dB *worse* than LS + linear above that.
 
 | Phase | Content | Status |
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
-| 3 | Neural estimator: data pipeline and model | done |
-| 3 | Neural estimator: training, evaluation, ablations | in progress |
+| 3 | Neural estimator: data pipeline, model, training, evaluation | done |
+| 3 | Neural estimator: ablations, failure map | next |
 | 4 | ONNX export, int8 quantization, C++ inference, latency | planned |
 | 5 | Browser demo on GitHub Pages | planned |
 
@@ -48,8 +49,9 @@ scratch:
 - **Data**: 32,000 training slots from region A with SNR uniform in 0-30 dB, generated
   in memory from fixed seeds (about 90 s on a laptop CPU) instead of being stored.
   Validation and test sets use separate seeds; region B is never used for training.
-- **Bar to beat**: the network input itself has an NMSE of -9.8 dB on the training
-  distribution.
+- **Training**: Adam, MSE loss, 100 epochs, about one hour on a laptop CPU
+  ([training curve](results/training_A.png)). Validation NMSE over mixed SNR: -15.9 dB,
+  against -9.8 dB for the network input.
 
 Note on fairness: the network is given the SNR, the interpolation baselines are not. An
 ablation without the SNR plane is planned to quantify this.
@@ -62,42 +64,66 @@ pytest
 python scripts/run_baselines.py --region A
 ```
 
-The model tests need PyTorch (CPU is enough) and are skipped without it:
-`pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+The model tests and the CNN results need PyTorch (CPU is enough); the tests are skipped
+without it. With PyTorch installed, the trained model in `models/` can be evaluated directly:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+python scripts/evaluate_nn.py --region A
+```
+
+`python scripts/train_nn.py` repeats the training.
 
 All parameters live in [`configs/default.yaml`](configs/default.yaml); every figure is
 produced by a script from a fixed seed.
 
 ## Results
 
-### Classical baselines
+QPSK, 4000 independent test slots per SNR point, `python scripts/evaluate_nn.py --region A|B`.
+The CNN was trained on region A only.
 
-QPSK, 1000 slots per SNR point, `python scripts/run_baselines.py --region A|B`.
+![CNN and baselines in region A](results/nn_eval_A.png)
+![CNN and baselines in region B](results/nn_eval_B.png)
 
-![Baselines in region A](results/baselines_A.png)
-![Baselines in region B](results/baselines_B.png)
+| NMSE (dB) | A @ 0 dB | A @ 10 dB | A @ 20 dB | A @ 30 dB | B @ 0 dB | B @ 10 dB | B @ 20 dB | B @ 30 dB |
+|---|---|---|---|---|---|---|---|---|
+| LS + linear | -1.6 | -11.5 | -21.3 | -29.2 | -1.4 | -10.2 | -14.9 | -15.9 |
+| LS + spline | -0.1 | -10.1 | -20.0 | -28.9 | 0.0 | -9.2 | -15.2 | -16.7 |
+| **CNN** | **-8.2** | **-16.9** | **-23.9** | **-29.5** | **-5.6** | **-9.6** | **-13.5** | **-15.9** |
+| LMMSE (known statistics) | -12.4 | -20.2 | -28.6 | -37.2 | -7.5 | -14.4 | -21.8 | -26.5 |
 
-| NMSE (dB) | A @ 10 dB | A @ 30 dB | B @ 10 dB | B @ 30 dB |
+| SNR needed for the target BER | LS + linear | CNN | LMMSE | Perfect CSI |
 |---|---|---|---|---|
-| LS + linear | -11.4 | -28.9 | -10.2 | -15.9 |
-| LS + spline | -10.0 | -28.7 | -9.3 | -16.7 |
-| LMMSE (known statistics) | -20.1 | -36.9 | -14.5 | -26.6 |
+| Region A, BER 1e-2 | 19.4 dB | 18.3 dB | 17.5 dB | 16.9 dB |
+| Region A, BER 3e-2 | 14.1 dB | 12.7 dB | 12.2 dB | 11.7 dB |
+| Region B, BER 3e-2 | 16.0 dB | 18.2 dB | 13.5 dB | 11.9 dB |
 
-- In region A, LMMSE gains 8-11 dB NMSE over LS. In BER that is about 2 dB SNR at a
-  BER of 1e-2, and LMMSE ends up within about 0.5 dB of perfect CSI.
-- In region B, both LS variants hit an error floor around -16 dB from 20 dB SNR on: the
-  channel changes too much between pilot symbols for linear or spline interpolation.
-  LMMSE avoids the floor because it knows the Doppler, but it needs exact statistics.
-- Even perfect CSI shows a BER floor in region B (1.3e-3 at 30 dB vs. 5e-4 in A),
-  caused by inter-carrier interference and delay taps beyond the cyclic prefix.
+**Region A (same conditions as in training).** The CNN gains 6.7 dB NMSE over LS + linear at
+0 dB SNR, without being told the channel statistics. The gain then shrinks steadily to 0.3 dB
+at 30 dB, while the distance to LMMSE grows from 3.3 dB at 10 dB to 7.7 dB. A likely cause is
+the training loss: the error energy is 133 times larger at 0 dB than at 30 dB, so an
+unweighted MSE is dominated by noisy slots. This has not been tested yet.
 
-The gap between LS and genie LMMSE is the room a learned estimator can try to close
-without being told the channel statistics.
+**Region B (never seen in training).** The CNN still helps at low SNR (+4.2 dB at 0 dB) but is
+worse than its own input from 10 to 25 dB, by up to 1.8 dB, and level with it at 30 dB. At a
+BER of 3e-2 this costs 2.2 dB
+SNR compared to plain LS + linear. A likely explanation is that it learned how smooth channels
+are in region A and now smooths away real variation. The failure map planned next is meant
+to check this. **The model should not be used outside its training range without a check.**
+
+**Classical baselines.** Both LS variants hit an error floor around -16 dB in region B: the
+channel changes too much between pilot symbols for interpolation. LMMSE avoids the floor
+because it knows the Doppler, but it needs exact statistics. Even perfect CSI shows a BER
+floor in region B (1.4e-3 at 30 dB vs. 6e-4 in A), caused by inter-carrier interference and
+delay taps beyond the cyclic prefix. Baselines alone: `scripts/run_baselines.py`.
 
 ### Limitations
 
+- LMMSE is not a practical competitor here but an upper bound: it knows the exact per-slot
+  PDP, Doppler and noise variance. A fair classical opponent with averaged statistics is
+  still missing.
+- The CNN results are for QPSK and one training run with one seed.
 - Taps are sample-spaced (Ts = 0.52 us), so small delay spreads are coarsely resolved.
-- The LMMSE baseline knows the exact per-slot PDP, Doppler and noise variance (genie).
 - NMSE is computed over all resource elements, including the pilot positions.
 - Channels with a delay spread beyond the CP cause ISI that no estimator here can remove.
 - Both interpolation baselines extrapolate linearly beyond the outermost pilots. Cubic
@@ -108,7 +134,8 @@ without being told the channel statistics.
 ```
 configs/            YAML configurations
 src/ofdm/           simulation, channel, baselines
-src/nn/             training data and CNN model; training and ONNX export next
+src/nn/             training data, CNN model, training, estimator wrapper
+models/             trained weights
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest      (Phase 4)
 web/                demo for GitHub Pages                 (Phase 5)

@@ -8,7 +8,9 @@ data:
   snr_db: [0.0, 30.0]         # each slot draws its SNR uniformly from this range
   train: {n_slots: 32000, seed: 100}
   val: {n_slots: 4000, seed: 101}
-  # test sets for the evaluation: A seed 102, B seed 103 (never used for training)
+  # Independent test data for the evaluation, never used for training or model selection.
+  test_slots: 4000            # slots per SNR point
+  test_seeds: {A: 102, B: 103}
 
 model:
   channels: 16

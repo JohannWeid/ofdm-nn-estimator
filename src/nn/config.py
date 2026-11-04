@@ -21,6 +21,8 @@ class DataConfig:
     snr_db: tuple[float, float] = (0.0, 30.0)
     train: Split = field(default_factory=lambda: Split(32000, 100))
     val: Split = field(default_factory=lambda: Split(4000, 101))
+    test_slots: int = 4000
+    test_seeds: dict[str, int] = field(default_factory=lambda: {"A": 102, "B": 103})
 
 
 @dataclass(frozen=True)
