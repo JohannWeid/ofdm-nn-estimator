@@ -1,8 +1,8 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
-> and its building blocks are tested in ablations. It is exported to ONNX; int8 quantization and
-> C++ inference come next.
+> and its building blocks are tested in ablations. It is exported to ONNX and quantized to int8;
+> C++ inference and latency come next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
@@ -12,14 +12,15 @@ helps only below 10 dB SNR and is up to 1.2 dB *worse* than LS + linear at 15-20
 map traces this to Doppler: the CNN smooths the channel over time by a nearly fixed amount,
 whereas LMMSE adapts its smoothing to the channel. Ablations show that a tenth of the training
 data nearly suffices, and that a model with 5.7 times fewer operations costs only 0.2 dB SNR
-at that BER.
+at that BER. Quantized to int8, the standard model loses at most 0.33 dB NMSE in region A and
+0.01 dB SNR at that BER.
 
 | Phase | Content | Status |
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
-| 4 | ONNX export | done |
-| 4 | int8 quantization, C++ inference, latency | next |
+| 4 | ONNX export, int8 quantization | done |
+| 4 | C++ inference, latency | next |
 | 5 | Browser demo on GitHub Pages | planned |
 
 ## Method
@@ -86,11 +87,13 @@ laptop used here, a fresh process matched the logged values of the first two epo
 other machines or thread counts can differ slightly. Adding
 `--nn-config configs/experiments/<name>.yaml` trains a variant.
 
-The ONNX export needs one more set of packages:
+The ONNX export and the int8 quantization need one more set of packages. The comparison takes
+roughly half an hour on a laptop CPU:
 
 ```bash
 pip install -e ".[deploy]"
 python scripts/export_onnx.py
+python scripts/compare_quantization.py
 ```
 
 All parameters live in [`configs/default.yaml`](configs/default.yaml); every figure is
@@ -222,7 +225,7 @@ For comparison, LS + linear needs 19.4 dB SNR for a BER of 1e-2 in region A.
   multiply-accumulates (0.94 M per slot) and loses 0.7-1.5 dB NMSE in region A, but only 0.2 dB
   SNR at a BER of 1e-2, because noise dominates the channel estimation error at that SNR. In
   region B it is neither clearly better nor worse: +0.7 dB at 10 dB, -0.7 to -1.0 dB from 20 dB
-  on. It is the candidate if the standard model turns out too slow in Phase 4.
+  on. In int8 it loses more of its gain, see [below](#int8-quantization).
 - **Data is not the bottleneck.** With 10 % of the slots the gain in region A falls by 0.25 dB at
   30 dB and at most 0.13 dB elsewhere. More slots from region A are therefore unlikely to close
   the gap to LMMSE; whether a larger model would is untested. Early stopping ended the 10 % run
@@ -231,11 +234,55 @@ For comparison, LS + linear needs 19.4 dB SNR for a BER of 1e-2 in region A.
 ### ONNX export
 
 `python scripts/export_onnx.py` exports only the correction network; adding the correction to the
-LS + linear estimate stays outside the model. That way the planned int8 quantization will not
-round the estimate itself. The largest output difference to PyTorch over 100 validation slots is
-1.4e-6 for the standard model and 8.3e-7 for the small one. Evaluated in ONNX Runtime on the test
-slots above, the standard model's NMSE differs by less than 1e-6 dB and its bit errors by at most
-1 in 7.68 million bits per SNR point.
+LS + linear estimate stays outside the model. That way the int8 quantization does not round the
+estimate itself. The largest output difference to PyTorch over 100 validation slots is 1.4e-6 for
+the standard model and 8.3e-7 for the small one. Evaluated in ONNX Runtime on the test slots above,
+the standard model's NMSE differs by less than 1e-6 dB and its bit errors by at most 1 in 7.68
+million bits per SNR point.
+
+### int8 quantization
+
+The same script quantizes both models with ONNX Runtime after training (static quantization, QDQ
+format, no retraining), calibrated on 2,000 validation slots. `python scripts/compare_quantization.py`
+evaluates them on the test slots above. Only the correction is int8: adding it to the LS + linear
+estimate stays in floating point, so a purely integer receiver would need a wider format for that
+step. Latency follows with the C++ inference.
+
+| Region A: NMSE in dB | 0 dB | 10 dB | 20 dB | 30 dB | Largest NMSE loss | SNR for BER 1e-2 in A | SNR for BER 3e-2 in B | File |
+|---|---|---|---|---|---|---|---|---|
+| LS + linear | -1.57 | -11.53 | -21.25 | -29.20 | | 19.36 dB | 16.01 dB | |
+| Standard, FP32 | -7.87 | -16.86 | -24.56 | -31.34 | | 18.16 dB | 17.63 dB | 30.2 KB |
+| **Standard, int8** | **-7.56** | **-16.84** | **-24.48** | **-31.02** | **0.33 dB** | **18.17 dB** | **17.65 dB** | **16.5 KB** |
+| Standard, int8, full value range | -7.85 | -16.77 | -24.18 | -30.20 | 1.15 dB | 18.24 dB | 17.84 dB | |
+| Standard, int8, naive | -7.82 | -16.72 | -23.92 | -29.27 | 2.07 dB | 18.30 dB | 17.94 dB | |
+| Small, FP32 | -6.37 | -15.63 | -23.82 | -30.03 | | 18.37 dB | 18.15 dB | 10.6 KB |
+| Small, int8 | -6.15 | -15.47 | -23.32 | -29.29 | 0.77 dB | 18.49 dB | 18.17 dB | 9.3 KB |
+
+The largest loss is over all seven SNR points of region A, against the FP32 version of the same
+model. "Naive" means the addition inside the model, one weight step size per layer and the full
+value range.
+
+- **Done carefully, int8 costs little.** The standard model keeps 1.82 of its 2.15 dB gain over
+  LS + linear at 30 dB. In region B it loses at most 0.14 dB, within the noise between training
+  runs. All convolutions run as `QLinearConv`, so in integers; the tests check this on the graph
+  ONNX Runtime really executes, because the file alone does not show it.
+- **The naive way loses the gain at high SNR.** Only 0.07 dB remain at 30 dB. Moving the addition
+  out and giving every filter its own step size brings back 0.93 dB, limiting the value range
+  another 0.82 dB. In the naive model ONNX Runtime also leaves one convolution in floating point
+  without a warning; the cause was not investigated.
+- **The step size shows why.** At 30 dB the LS + linear error is about 0.025 per real or imaginary
+  part. One step at the output is 0.026 with the full value range and 0.013 with the limited one.
+  Rounding adds step^2 / 12 per part, which by calculation explains about half of the remaining
+  0.33 dB. The rest has to come from the rounding inside the network.
+- **The range is a compromise, chosen on validation slots.** Clipping rare values costs accuracy at
+  low SNR, where they occur: 0.32 dB at 0 dB, against 0.03 dB with the full range. Of five ranges
+  ([`results/quantization_percentile.csv`](results/quantization_percentile.csv)), covering 99.95 %
+  of the values gives the smallest largest loss on validation slots: 0.33 dB, against 0.51 dB for
+  both 99.9 % and 99.995 %. The neighbouring 99.98 % is only 0.05 dB behind, so the exact value
+  should not be overread.
+- **The small model suffers more.** It loses up to 0.77 dB, and at 30 dB only 0.10 dB of its gain
+  over LS + linear remains. At a BER of 1e-2 it falls 0.32 dB behind the standard model, against
+  0.21 dB in FP32.
 
 ### Limitations
 
@@ -257,8 +304,8 @@ slots above, the standard model's NMSE differs by less than 1e-6 dB and its bit 
 ```
 configs/            YAML configurations, variants in configs/experiments/
 src/ofdm/           simulation, channel, baselines
-src/nn/             training data, CNN model, training, estimator wrapper
-models/             trained weights and ONNX exports
+src/nn/             training data, CNN model, training, estimator wrapper, export, quantization
+models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest      (Phase 4)
 web/                demo for GitHub Pages                 (Phase 5)

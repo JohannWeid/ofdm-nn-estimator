@@ -1,4 +1,4 @@
-"""Export trained models to ONNX and check the result against PyTorch.
+"""Export trained models to ONNX, check them against PyTorch and quantize them to int8.
 
 Examples:
     python scripts/export_onnx.py
@@ -14,6 +14,7 @@ from nn.config import load_nn_config
 from nn.dataset import make_dataset
 from nn.export import export_onnx, max_deviation
 from nn.model import load_model
+from nn.quantize import calibration_input, ops_that_run, quantize
 from ofdm import LinkSimulator, load_config
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,7 @@ def main() -> None:
     x, _ = make_dataset(
         sim, cfg.regions[data.region], args.check_slots, data.snr_db, data.val.seed
     )
+    x_calibration = calibration_input(sim, cfg, data)
 
     for path in args.model or DEFAULT_MODELS:
         model = load_model(path)
@@ -45,6 +47,13 @@ def main() -> None:
               f"over {args.check_slots} slots: {deviation:.2e}")
         if deviation >= MAX_DEVIATION:
             raise SystemExit(f"{out.name}: deviation is not below {MAX_DEVIATION:g}")
+
+        out_int8 = path.with_name(f"{path.stem}_int8.onnx")
+        quantize(out, out_int8, x_calibration)
+        ops = ops_that_run(out_int8)
+        print(f"{out_int8.name}: {out_int8.stat().st_size / 1024:.1f} KB, operators: {ops}")
+        if "Conv" in ops:
+            raise SystemExit(f"{out_int8.name}: a convolution still runs in floating point")
 
 
 if __name__ == "__main__":

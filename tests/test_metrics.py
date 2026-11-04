@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ofdm.metrics import tracked_variation
+from ofdm.metrics import snr_at_ber, tracked_variation
 
 
 def smooth_channel(rng: np.random.Generator) -> np.ndarray:
@@ -31,3 +31,14 @@ def test_constant_estimate_tracks_nothing_and_static_channel_gives_nan() -> None
     h = smooth_channel(np.random.default_rng(3))
     assert tracked_variation(np.ones_like(h), h, axis=1, lag=1) == pytest.approx(0.0)
     assert np.isnan(tracked_variation(h, np.ones_like(h), axis=1, lag=1))
+
+
+def test_snr_at_ber_interpolates_in_log_ber() -> None:
+    assert snr_at_ber([0.0, 10.0, 20.0], [1e-1, 1e-3, 1e-4], 1e-2) == pytest.approx(5.0)
+    assert snr_at_ber([0.0, 10.0, 20.0], [1e-1, 1e-3, 1e-4], 3e-4) == pytest.approx(15.23, abs=0.01)
+
+
+def test_snr_at_ber_is_nan_without_a_usable_crossing() -> None:
+    assert np.isnan(snr_at_ber([0.0, 10.0], [1e-1, 5e-2], 1e-2))  # stays above the target
+    assert np.isnan(snr_at_ber([0.0, 10.0], [1e-3, 1e-4], 1e-2))  # starts below the target
+    assert np.isnan(snr_at_ber([0.0, 10.0], [1e-1, 0.0], 1e-2))  # log(0) cannot be interpolated

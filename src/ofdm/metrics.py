@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from itertools import pairwise
+
 import numpy as np
 from scipy.special import erfc
 
@@ -39,6 +42,19 @@ def tracked_variation(h_hat: np.ndarray, h_true: np.ndarray, axis: int, lag: int
 
 def bit_error_rate(bits_hat: np.ndarray, bits: np.ndarray) -> float:
     return float(np.mean(bits_hat != bits))
+
+
+def snr_at_ber(snr_db: Sequence[float], ber: Sequence[float], target: float) -> float:
+    """SNR at which a BER curve falls below target, interpolated in log(BER); NaN if it never does.
+
+    snr_db must be ascending. A step down to a BER of zero cannot be interpolated and counts as
+    never reaching the target.
+    """
+    for (snr0, ber0), (snr1, ber1) in pairwise(zip(snr_db, ber, strict=True)):
+        if ber0 >= target > ber1 > 0:
+            share = (np.log10(ber0) - np.log10(target)) / (np.log10(ber0) - np.log10(ber1))
+            return float(snr0 + share * (snr1 - snr0))
+    return float("nan")
 
 
 def q_function(x: np.ndarray) -> np.ndarray:

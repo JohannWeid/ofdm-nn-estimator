@@ -26,14 +26,19 @@ def export_onnx(
     n_symbols: int = 14,
     n_subcarriers: int = 72,
     opset: int = 18,
+    whole_model: bool = False,
 ) -> None:
-    """Write the correction network to one self-contained ONNX file; the batch size stays free."""
+    """Write the correction network to one self-contained ONNX file; the batch size stays free.
+
+    whole_model=True includes the addition, so the output is the estimate instead of the correction.
+    This only exists to measure what that costs in int8, see scripts/compare_quantization.py.
+    """
     if not model.use_snr:
         raise ValueError("only models with the SNR plane can be exported, see nn.dataset.to_input")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.onnx.export(
-        model.body.eval(),
+        (model if whole_model else model.body).eval(),
         (torch.zeros(1, 3, n_symbols, n_subcarriers),),
         path,
         input_names=[INPUT_NAME],

@@ -66,6 +66,17 @@ def test_onnx_estimator_matches_neural_estimator(
     assert np.abs(h_onnx - h_torch).max() < MAX_DEVIATION
 
 
+def test_whole_model_export_includes_the_addition(exported, tmp_path: Path) -> None:
+    model, _ = exported
+    path = tmp_path / "whole.onnx"
+    export_onnx(model, path, whole_model=True)
+    x = random_input(2)
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    with torch.inference_mode():
+        expected = model.eval()(torch.from_numpy(x)).numpy()
+    assert np.abs(session.run(None, {INPUT_NAME: x})[0] - expected).max() < MAX_DEVIATION
+
+
 def test_model_without_snr_plane_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="SNR plane"):
         export_onnx(build_model(ModelConfig(use_snr=False)), tmp_path / "cnn.onnx")
