@@ -131,6 +131,27 @@ def _assemble(
     )
 
 
+def evaluate_grid(
+    sim: LinkSimulator,
+    estimators: Mapping[str, Estimator],
+    delay_spreads_us: Iterable[float],
+    dopplers_hz: Iterable[float],
+    snr_db: Iterable[float],
+    n_slots: int,
+    batch_size: int,
+    rng: np.random.Generator,
+) -> list[dict[str, float | str]]:
+    """evaluate() for every fixed (delay spread, Doppler) pair; both are added to each row."""
+    snr_db, dopplers_hz = list(snr_db), list(dopplers_hz)
+    rows: list[dict[str, float | str]] = []
+    for tau in delay_spreads_us:
+        for fd in dopplers_hz:
+            region = Region((tau, tau), (fd, fd))
+            for row in evaluate(sim, estimators, region, snr_db, n_slots, batch_size, rng):
+                rows.append({"delay_spread_us": float(tau), "doppler_hz": float(fd), **row})
+    return rows
+
+
 def evaluate(
     sim: LinkSimulator,
     estimators: Mapping[str, Estimator],

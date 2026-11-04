@@ -18,6 +18,25 @@ def nmse(h_hat: np.ndarray, h_true: np.ndarray) -> float:
     return float(np.sum(np.abs(h_hat - h_true) ** 2) / np.sum(np.abs(h_true) ** 2))
 
 
+def tracked_variation(h_hat: np.ndarray, h_true: np.ndarray, axis: int, lag: int) -> float:
+    """Share of the true channel change over `lag` cells that the estimate reproduces.
+
+    Regresses the change of the estimate onto the true change: 1 means the estimate follows
+    the channel, below 1 means it smooths the variation away. Noise is uncorrelated with the
+    true change, so it does not bias this measure. Returns NaN for a channel without change.
+    """
+
+    def change(h: np.ndarray) -> np.ndarray:
+        n = h.shape[axis]
+        return np.take(h, range(lag, n), axis) - np.take(h, range(n - lag), axis)
+
+    d_true, d_hat = change(h_true), change(h_hat)
+    energy = np.sum(np.abs(d_true) ** 2)
+    if energy == 0:
+        return float("nan")
+    return float(np.real(np.sum(np.conj(d_true) * d_hat)) / energy)
+
+
 def bit_error_rate(bits_hat: np.ndarray, bits: np.ndarray) -> float:
     return float(np.mean(bits_hat != bits))
 

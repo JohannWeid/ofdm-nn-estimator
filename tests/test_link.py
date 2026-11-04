@@ -4,6 +4,7 @@ import pytest
 from ofdm import LinkSimulator, PerfectCSI, evaluate, fixed_profiles
 from ofdm.config import config_from_dict
 from ofdm.estimators import InterpolationEstimator
+from ofdm.link import evaluate_grid
 from ofdm.metrics import ber_awgn
 
 
@@ -37,3 +38,16 @@ def test_snr_per_slot_array(sim: LinkSimulator) -> None:
     snr = np.array([0.0, 10.0, 20.0])
     slots = sim.simulate(3, snr, rng, fixed_profiles(0.2e-6, 50.0, 3))
     np.testing.assert_allclose(slots.snr_db, snr)
+
+
+def test_evaluate_grid_covers_all_cells_and_sees_channel_conditions(sim: LinkSimulator) -> None:
+    rows = evaluate_grid(
+        sim, {"ls_linear": InterpolationEstimator(sim.pattern, "linear")},
+        delay_spreads_us=[0.1, 1.3], dopplers_hz=[0.0, 600.0], snr_db=[30.0],
+        n_slots=30, batch_size=30, rng=np.random.default_rng(8),
+    )
+    assert len(rows) == 4
+    nmse = {(r["delay_spread_us"], r["doppler_hz"]): r["nmse_db"] for r in rows}
+    # Interpolation gets harder with a larger delay spread and a higher Doppler.
+    assert nmse[(1.3, 0.0)] > nmse[(0.1, 0.0)] + 3.0
+    assert nmse[(0.1, 600.0)] > nmse[(0.1, 0.0)] + 3.0

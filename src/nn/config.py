@@ -42,11 +42,21 @@ class TrainConfig:
 
 
 @dataclass(frozen=True)
+class FailureMapConfig:
+    delay_spread_us: tuple[float, ...] = (0.1, 0.5, 0.9, 1.3)
+    doppler_hz: tuple[float, ...] = (0.0, 200.0, 400.0, 600.0)
+    snr_db: tuple[float, ...] = (10.0, 20.0, 30.0)
+    n_slots: int = 300
+    seed: int = 104
+
+
+@dataclass(frozen=True)
 class NNConfig:
     seed: int = 0
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainConfig = field(default_factory=TrainConfig)
+    failure_map: FailureMapConfig = field(default_factory=FailureMapConfig)
 
 
 def nn_config_from_dict(raw: dict[str, Any]) -> NNConfig:
@@ -56,11 +66,15 @@ def nn_config_from_dict(raw: dict[str, Any]) -> NNConfig:
     for split in ("train", "val"):
         if split in data:
             data[split] = Split(**data[split])
+    failure_map = {
+        k: tuple(v) if isinstance(v, list) else v for k, v in raw.get("failure_map", {}).items()
+    }
     return NNConfig(
         seed=int(raw.get("seed", 0)),
         data=DataConfig(**data),
         model=ModelConfig(**raw.get("model", {})),
         training=TrainConfig(**raw.get("training", {})),
+        failure_map=FailureMapConfig(**failure_map),
     )
 
 

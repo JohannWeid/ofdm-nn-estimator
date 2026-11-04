@@ -1,19 +1,21 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
-> **Status: work in progress.** The CNN is trained and evaluated. Ablations, a failure map
-> and int8/C++ deployment come next.
+> **Status: work in progress.** The CNN is trained and evaluated, and its failure range is
+> mapped. A loss experiment, ablations and int8/C++ deployment come next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.4 dB NMSE at 10 dB SNR, which is 1.1 dB SNR at a BER
 of 1e-2 and 0.8 dB short of LMMSE with exact channel statistics. Its gain shrinks to 0.3 dB
 at 30 dB SNR. On channels it has never seen (larger delay spread, higher Doppler) it only
-helps below about 10 dB SNR and is up to 1.8 dB *worse* than LS + linear above that.
+helps below about 10 dB SNR and is up to 1.8 dB *worse* than LS + linear above that. A
+failure map traces this to Doppler: the CNN smooths the channel over time by a nearly fixed
+amount, whereas LMMSE adapts its smoothing to the channel.
 
 | Phase | Content | Status |
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
-| 3 | Neural estimator: data pipeline, model, training, evaluation | done |
-| 3 | Neural estimator: ablations, failure map | next |
+| 3 | Neural estimator: data pipeline, model, training, evaluation, failure map | done |
+| 3 | Neural estimator: loss experiment, ablations | next |
 | 4 | ONNX export, int8 quantization, C++ inference, latency | planned |
 | 5 | Browser demo on GitHub Pages | planned |
 
@@ -106,16 +108,45 @@ unweighted MSE is dominated by noisy slots. This has not been tested yet.
 
 **Region B (never seen in training).** The CNN still helps at low SNR (+4.2 dB at 0 dB) but is
 worse than its own input from 10 to 25 dB, by up to 1.8 dB, and level with it at 30 dB. At a
-BER of 3e-2 this costs 2.2 dB
-SNR compared to plain LS + linear. A likely explanation is that it learned how smooth channels
-are in region A and now smooths away real variation. The failure map planned next is meant
-to check this. **The model should not be used outside its training range without a check.**
+BER of 3e-2 this costs 2.2 dB SNR compared to plain LS + linear; the section on failures below
+explains why. **The model should not be used outside its training range without a check.**
 
 **Classical baselines.** Both LS variants hit an error floor around -16 dB in region B: the
 channel changes too much between pilot symbols for interpolation. LMMSE avoids the floor
 because it knows the Doppler, but it needs exact statistics. Even perfect CSI shows a BER
 floor in region B (1.4e-3 at 30 dB vs. 6e-4 in A), caused by inter-carrier interference and
 delay taps beyond the cyclic prefix. Baselines alone: `scripts/run_baselines.py`.
+
+### Where the CNN fails
+
+`python scripts/failure_map.py`, 300 slots per cell and SNR. All estimators see the same slots.
+Blue means the CNN is better than the reference, red means it is worse.
+
+![NMSE difference of the CNN over delay spread and Doppler](results/failure_map.png)
+
+- **Doppler does the damage.** Without Doppler the CNN is never clearly worse than LS + linear,
+  at any delay spread (at most +0.2 dB). A larger delay spread only removes its advantage: at
+  10 dB SNR the gain falls from 6.0 dB at 0.1 us to 0.5 dB at 1.5 us.
+- **The higher the SNR, the earlier it turns harmful.** The CNN falls behind LS + linear from
+  about 400-500 Hz at 10 dB SNR and from about 200-300 Hz at 20 dB. Training only covered up
+  to 150 Hz. The largest loss in the map is 3.4 dB (20 dB SNR, 0.1 us, 600 Hz).
+- **At 30 dB there is hardly any gain, even in region A:** between +0.3 and -0.8 dB.
+
+To check whether smoothing explains this, `python scripts/tracking_check.py` measures which
+share of the true channel change over 3 OFDM symbols arrives in the estimate (1 = all of it;
+noise does not bias this measure). Delay spread 0.3 us:
+
+| Share of true change over time | 10 dB, 50 Hz | 10 dB, 600 Hz | 20 dB, 50 Hz | 20 dB, 600 Hz |
+|---|---|---|---|---|
+| LS + linear | 1.00 | 0.93 | 0.99 | 0.93 |
+| CNN | 0.62 | 0.52 | 0.77 | 0.71 |
+| LMMSE (known statistics) | 0.56 | 0.95 | 0.90 | 0.99 |
+
+Smoothing itself is not the problem: at low Doppler LMMSE smooths at least as much at 10 dB
+SNR. But LMMSE knows the Doppler and stops smoothing when the channel changes quickly, while
+the CNN keeps smoothing at nearly the same strength. This fits the failure map. That the
+fixed smoothing comes from training only on low Doppler is still an untested assumption;
+training over a wider Doppler range would test it.
 
 ### Limitations
 
