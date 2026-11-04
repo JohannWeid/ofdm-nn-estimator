@@ -1,7 +1,7 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
-> **Status: work in progress.** The CNN is trained and evaluated, and its failure range is
-> mapped. A loss experiment, ablations and int8/C++ deployment come next.
+> **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped,
+> and a second training loss is tested. Ablations and int8/C++ deployment come next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.4 dB NMSE at 10 dB SNR, which is 1.1 dB SNR at a BER
@@ -9,13 +9,14 @@ of 1e-2 and 0.8 dB short of LMMSE with exact channel statistics. Its gain shrink
 at 30 dB SNR. On channels it has never seen (larger delay spread, higher Doppler) it only
 helps below about 10 dB SNR and is up to 1.8 dB *worse* than LS + linear above that. A
 failure map traces this to Doppler: the CNN smooths the channel over time by a nearly fixed
-amount, whereas LMMSE adapts its smoothing to the channel.
+amount, whereas LMMSE adapts its smoothing to the channel. A loss that counts every slot
+equally lifts the gain at 30 dB to 2.1 dB but does not fix the Doppler problem.
 
 | Phase | Content | Status |
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
-| 3 | Neural estimator: data pipeline, model, training, evaluation, failure map | done |
-| 3 | Neural estimator: loss experiment, ablations | next |
+| 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment | done |
+| 3 | Neural estimator: ablations | next |
 | 4 | ONNX export, int8 quantization, C++ inference, latency | planned |
 | 5 | Browser demo on GitHub Pages | planned |
 
@@ -102,9 +103,8 @@ The CNN was trained on region A only.
 
 **Region A (same conditions as in training).** The CNN gains 6.7 dB NMSE over LS + linear at
 0 dB SNR, without being told the channel statistics. The gain then shrinks steadily to 0.3 dB
-at 30 dB, while the distance to LMMSE grows from 3.3 dB at 10 dB to 7.7 dB. A likely cause is
-the training loss: the error energy is 133 times larger at 0 dB than at 30 dB, so an
-unweighted MSE is dominated by noisy slots. This has not been tested yet.
+at 30 dB, while the distance to LMMSE grows from 3.3 dB at 10 dB to 7.7 dB. The training loss
+explains part of this, as the experiment below shows.
 
 **Region B (never seen in training).** The CNN still helps at low SNR (+4.2 dB at 0 dB) but is
 worse than its own input from 10 to 25 dB, by up to 1.8 dB, and level with it at 30 dB. At a
@@ -116,6 +116,30 @@ channel changes too much between pilot symbols for interpolation. LMMSE avoids t
 because it knows the Doppler, but it needs exact statistics. Even perfect CSI shows a BER
 floor in region B (1.4e-3 at 30 dB vs. 6e-4 in A), caused by inter-carrier interference and
 delay taps beyond the cyclic prefix. Baselines alone: `scripts/run_baselines.py`.
+
+### Does the training loss matter?
+
+The error energy is 133 times larger at 0 dB than at 30 dB SNR, so an unweighted MSE is
+dominated by noisy slots. To test whether this causes the weak gain at high SNR, a second model
+([`configs/experiments/log_nmse.yaml`](configs/experiments/log_nmse.yaml)) minimizes the mean
+NMSE in dB over the slots, so that every slot counts equally. Data and start weights are the same.
+
+![CNN with MSE and log-NMSE loss in region A](results/loss_comparison_A.png)
+
+| NMSE gain over LS + linear (dB) | 0 dB | 5 dB | 10 dB | 15 dB | 20 dB | 25 dB | 30 dB |
+|---|---|---|---|---|---|---|---|
+| Region A, MSE loss | 6.7 | 6.2 | 5.4 | 4.3 | 2.7 | 1.5 | 0.3 |
+| Region A, log-NMSE loss | 6.3 | 6.0 | 5.3 | 4.4 | 3.2 | 2.6 | 2.1 |
+| Region B, MSE loss | 4.2 | 1.9 | -0.5 | -1.8 | -1.5 | -0.5 | 0.0 |
+| Region B, log-NMSE loss | 4.2 | 1.9 | -0.2 | -1.5 | -1.4 | -0.6 | 0.1 |
+
+- **The loss is part of the explanation, not all of it.** At 30 dB in region A the gain rises from
+  0.3 to 2.1 dB, for 0.4 dB less at 0 dB. The CNN is still 5.9 dB behind LMMSE there.
+- **It does not fix region B.** The CNN stays worse than LS + linear from 10 to 25 dB, as
+  expected if the problem is the Doppler range rather than the weighting of the slots.
+- **Caveats:** one training run per loss. Early stopping ended the log-NMSE run after 71 epochs
+  (best epoch 61), the MSE run used all 100. All other results in this README still use the
+  MSE model.
 
 ### Where the CNN fails
 

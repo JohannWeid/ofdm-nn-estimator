@@ -11,7 +11,14 @@ torch = pytest.importorskip("torch")
 from nn.config import ModelConfig, TrainConfig, load_nn_config  # noqa: E402
 from nn.dataset import make_dataset  # noqa: E402
 from nn.model import build_model, load_model, save_model  # noqa: E402
-from nn.train import LOG_FIELDS, nmse_db, predict, train  # noqa: E402
+from nn.train import (  # noqa: E402
+    LOG_FIELDS,
+    log_nmse_loss,
+    make_loss,
+    nmse_db,
+    predict,
+    train,
+)
 from ofdm import LinkSimulator  # noqa: E402
 from ofdm.config import Config  # noqa: E402
 
@@ -32,6 +39,44 @@ def test_nn_config_file_loads() -> None:
     assert nn_cfg.data.region == "A"
     assert nn_cfg.data.train.seed != nn_cfg.data.val.seed
     assert nn_cfg.model == ModelConfig()
+
+
+def test_experiment_config_only_overrides_what_it_names() -> None:
+    base = load_nn_config(ROOT / "configs" / "nn.yaml")
+    experiment = load_nn_config(ROOT / "configs" / "experiments" / "log_nmse.yaml")
+    assert experiment.name != base.name
+    assert experiment.training.loss == "log_nmse" and base.training.loss == "mse"
+    # Everything else must match, otherwise the comparison between the two would be unfair.
+    assert experiment.data == base.data
+    assert experiment.model == base.model
+    assert experiment.seed == base.seed
+    assert experiment.training.lr == base.training.lr
+    assert experiment.training.max_epochs == base.training.max_epochs
+
+
+def test_log_nmse_counts_every_slot_equally() -> None:
+    target = torch.ones(2, 2, 14, 72)
+    prediction = target.clone()
+    prediction[0] += 0.1  # slot NMSE 1e-2 = -20 dB
+    prediction[1] += 0.001  # slot NMSE 1e-6 = -60 dB
+    assert log_nmse_loss(prediction, target).item() == pytest.approx(-40.0, abs=0.01)
+    # An unweighted MSE is almost entirely the noisy slot.
+    mse = torch.nn.functional.mse_loss(prediction, target).item()
+    assert mse == pytest.approx(0.5 * 0.1**2, rel=1e-3)
+
+
+def test_unknown_loss_is_rejected() -> None:
+    with pytest.raises(ValueError, match="unknown loss"):
+        make_loss("nmse")
+
+
+def test_training_with_log_nmse_improves_the_input(small_data) -> None:
+    train_data, val_data = small_data
+    cfg = TrainConfig(loss="log_nmse", batch_size=32, lr=3e-3, max_epochs=6, patience=10)
+    result = train(build_model(ModelConfig()), train_data, val_data, cfg, seed=0, verbose=False)
+    x_val, y_val = (torch.from_numpy(a) for a in val_data)
+    assert result.best_val_nmse_db < nmse_db(x_val[:, :2], y_val)
+    assert result.best_val_loss < log_nmse_loss(x_val[:, :2], y_val).item()
 
 
 def test_short_training_beats_the_input_and_writes_a_log(small_data, tmp_path: Path) -> None:

@@ -1,10 +1,11 @@
-"""Training loop: Adam, MSE loss, early stopping on the validation loss, CSV log."""
+"""Training loop: Adam, early stopping on the validation loss, CSV log."""
 
 from __future__ import annotations
 
 import copy
 import csv
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +29,25 @@ def nmse_db(prediction: torch.Tensor, target: torch.Tensor) -> float:
     """NMSE over all slots in dB; Re and Im are the two channels."""
     err = torch.sum((prediction - target) ** 2)
     return float(10 * torch.log10(err / torch.sum(target**2)))
+
+
+def log_nmse_loss(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Mean NMSE in dB over the slots, so a slot at 30 dB SNR counts as much as one at 0 dB.
+
+    A plain MSE adds up absolute errors, which are far larger in noisy slots. Taking the
+    logarithm per slot needs no hand-tuned weights: its gradient scales with 1 / error.
+    """
+    err = torch.sum((prediction - target) ** 2, dim=(1, 2, 3))
+    energy = torch.sum(target**2, dim=(1, 2, 3))
+    return torch.mean(10 * torch.log10(err / energy + 1e-12))
+
+
+def make_loss(name: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+    if name == "mse":
+        return torch.nn.MSELoss()
+    if name == "log_nmse":
+        return log_nmse_loss
+    raise ValueError(f"unknown loss {name!r}")
 
 
 @torch.no_grad()
@@ -56,7 +76,7 @@ def train(
         generator=torch.Generator().manual_seed(seed),  # reproducible batch order
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
-    loss_fn = torch.nn.MSELoss()
+    loss_fn = make_loss(cfg.loss)
 
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)

@@ -35,6 +35,7 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class TrainConfig:
+    loss: str = "mse"
     batch_size: int = 128
     lr: float = 1e-3
     max_epochs: int = 100
@@ -52,6 +53,7 @@ class FailureMapConfig:
 
 @dataclass(frozen=True)
 class NNConfig:
+    name: str = "A"
     seed: int = 0
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -70,6 +72,7 @@ def nn_config_from_dict(raw: dict[str, Any]) -> NNConfig:
         k: tuple(v) if isinstance(v, list) else v for k, v in raw.get("failure_map", {}).items()
     }
     return NNConfig(
+        name=str(raw.get("name", "A")),
         seed=int(raw.get("seed", 0)),
         data=DataConfig(**data),
         model=ModelConfig(**raw.get("model", {})),
@@ -78,6 +81,23 @@ def nn_config_from_dict(raw: dict[str, Any]) -> NNConfig:
     )
 
 
-def load_nn_config(path: str | Path) -> NNConfig:
+def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_raw(path: Path) -> dict[str, Any]:
+    """Read a YAML file; a `base` key names another file that this one only overrides."""
     with open(path, encoding="utf-8") as f:
-        return nn_config_from_dict(yaml.safe_load(f))
+        raw = yaml.safe_load(f)
+    base = raw.pop("base", None)
+    return _merge(_load_raw(path.parent / base), raw) if base else raw
+
+
+def load_nn_config(path: str | Path) -> NNConfig:
+    return nn_config_from_dict(_load_raw(Path(path)))

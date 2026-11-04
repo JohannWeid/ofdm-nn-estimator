@@ -14,7 +14,8 @@ STYLE = {
     "ls_linear": {"label": "LS + linear", "color": "#2a78d6", "marker": "o"},
     "ls_spline": {"label": "LS + spline", "color": "#eb6834", "marker": "s"},
     "lmmse": {"label": "LMMSE (known statistics)", "color": "#1baf7a", "marker": "^"},
-    "cnn": {"label": "CNN (this work)", "color": "#eda100", "marker": "D"},
+    "cnn": {"label": "CNN (MSE loss)", "color": "#eda100", "marker": "D"},
+    "cnn_log_nmse": {"label": "CNN (log-NMSE loss)", "color": "#e87ba4", "marker": "v"},
     "perfect": {"label": "Perfect CSI", "color": "#52514e", "marker": "", "linestyle": "--"},
 }
 INK, MUTED, GRID, SURFACE = "#0b0b0b", "#898781", "#e1e0d9", "#fcfcfb"

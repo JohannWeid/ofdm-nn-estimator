@@ -3,6 +3,7 @@
 Examples:
     python scripts/train_nn.py                  # full training -> models/cnn_A.pt
     python scripts/train_nn.py --overfit 256    # sanity check: can it memorize 256 slots?
+    python scripts/train_nn.py --nn-config configs/experiments/log_nmse.yaml
 """
 
 from __future__ import annotations
@@ -92,8 +93,7 @@ def main() -> None:
     print(f"model: {count_parameters(model)} parameters, "
           f"{macs_per_slot(model) / 1e6:.2f} M MACs per slot")
 
-    stem = f"cnn_{data_cfg.region}"
-    log_path = None if args.overfit else ROOT / "results" / f"training_{data_cfg.region}.csv"
+    log_path = None if args.overfit else ROOT / "results" / f"training_{nn_cfg.name}.csv"
     t0 = time.perf_counter()
     result = train(model, train_data, val_data, train_cfg, nn_cfg.seed, log_path,
                    verbose=not args.overfit)
@@ -108,12 +108,12 @@ def main() -> None:
     if args.overfit:
         return
 
-    save_model(model, nn_cfg.model, ROOT / "models" / f"{stem}.pt")
+    save_model(model, nn_cfg.model, ROOT / "models" / f"cnn_{nn_cfg.name}.pt")
     plot_history(result.history, input_nmse,
                  f"Training on region {data_cfg.region} (SNR {data_cfg.snr_db[0]:.0f}-"
-                 f"{data_cfg.snr_db[1]:.0f} dB)",
-                 ROOT / "results" / f"training_{data_cfg.region}.png")
-    print(f"-> models/{stem}.pt, results/training_{data_cfg.region}.csv, .png")
+                 f"{data_cfg.snr_db[1]:.0f} dB, {train_cfg.loss} loss)",
+                 ROOT / "results" / f"training_{nn_cfg.name}.png")
+    print(f"-> models/cnn_{nn_cfg.name}.pt, results/training_{nn_cfg.name}.csv, .png")
 
 
 if __name__ == "__main__":
