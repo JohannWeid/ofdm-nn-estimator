@@ -8,6 +8,7 @@ Examples:
     python scripts/evaluate_nn.py --region A --stem loss_comparison \\
         --model cnn=models/cnn_A.pt --model cnn_log_nmse=models/cnn_A_log_nmse.pt \\
         --baselines ls_linear lmmse
+    python scripts/evaluate_nn.py --region A --model cnn_log_nmse=models/cnn_A_log_nmse.onnx
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from nn.config import load_nn_config
-from nn.estimator import NeuralEstimator
+from nn.estimator import NeuralEstimator, OnnxEstimator
 from nn.model import load_model
 from ofdm import LinkSimulator, baseline_estimators, evaluate, load_config
 from ofdm.plotting import plot_curves, print_table, write_csv
@@ -50,7 +51,10 @@ def main() -> None:
         estimators = {name: estimators[name] for name in args.baselines}
     for spec in args.model or [f"cnn_log_nmse={ROOT / 'models' / f'cnn_{nn_cfg.name}.pt'}"]:
         name, path = spec.split("=", 1)
-        estimators[name] = NeuralEstimator(load_model(path), sim.pattern)
+        if path.endswith(".onnx"):
+            estimators[name] = OnnxEstimator(path, sim.pattern)
+        else:
+            estimators[name] = NeuralEstimator(load_model(path), sim.pattern)
     rng = np.random.default_rng(nn_cfg.data.test_seeds[args.region])
 
     t0 = time.perf_counter()

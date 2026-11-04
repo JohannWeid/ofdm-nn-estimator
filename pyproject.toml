@@ -18,8 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Phase 3/4: training, ONNX export and quantization (CPU-only is enough).
-nn = ["torch>=2.2", "onnx>=1.16", "onnxruntime>=1.18"]
+# Phase 3: training (CPU-only is enough).
+nn = ["torch>=2.2"]
+# Phase 4: ONNX export and quantization. The C++ code uses the same ONNX Runtime version.
+deploy = ["onnx==1.23.2", "onnxruntime==1.31.1", "onnxscript==0.7.2"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]

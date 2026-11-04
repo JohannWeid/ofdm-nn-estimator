@@ -1,7 +1,8 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
-> and its building blocks are tested in ablations. int8/C++ deployment comes next.
+> and its building blocks are tested in ablations. It is exported to ONNX; int8 quantization and
+> C++ inference come next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
@@ -17,7 +18,8 @@ at that BER.
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
-| 4 | ONNX export, int8 quantization, C++ inference, latency | next |
+| 4 | ONNX export | done |
+| 4 | int8 quantization, C++ inference, latency | next |
 | 5 | Browser demo on GitHub Pages | planned |
 
 ## Method
@@ -83,6 +85,13 @@ python scripts/evaluate_nn.py --region A
 laptop used here, a fresh process matched the logged values of the first two epochs exactly;
 other machines or thread counts can differ slightly. Adding
 `--nn-config configs/experiments/<name>.yaml` trains a variant.
+
+The ONNX export needs one more set of packages:
+
+```bash
+pip install -e ".[deploy]"
+python scripts/export_onnx.py
+```
 
 All parameters live in [`configs/default.yaml`](configs/default.yaml); every figure is
 produced by a script from a fixed seed.
@@ -219,6 +228,15 @@ For comparison, LS + linear needs 19.4 dB SNR for a BER of 1e-2 in region A.
   the gap to LMMSE; whether a larger model would is untested. Early stopping ended the 10 % run
   after 849 epochs, so it got 21,225 gradient steps instead of 25,000.
 
+### ONNX export
+
+`python scripts/export_onnx.py` exports only the correction network; adding the correction to the
+LS + linear estimate stays outside the model. That way the planned int8 quantization will not
+round the estimate itself. The largest output difference to PyTorch over 100 validation slots is
+1.4e-6 for the standard model and 8.3e-7 for the small one. Evaluated in ONNX Runtime on the test
+slots above, the standard model's NMSE differs by less than 1e-6 dB and its bit errors by at most
+1 in 7.68 million bits per SNR point.
+
 ### Limitations
 
 - LMMSE is not a practical competitor here but an upper bound: it knows the exact per-slot
@@ -240,7 +258,7 @@ For comparison, LS + linear needs 19.4 dB SNR for a BER of 1e-2 in region A.
 configs/            YAML configurations, variants in configs/experiments/
 src/ofdm/           simulation, channel, baselines
 src/nn/             training data, CNN model, training, estimator wrapper
-models/             trained weights
+models/             trained weights and ONNX exports
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest      (Phase 4)
 web/                demo for GitHub Pages                 (Phase 5)
