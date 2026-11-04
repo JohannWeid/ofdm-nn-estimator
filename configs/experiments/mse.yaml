@@ -1,0 +1,7 @@
+# The first model: unweighted MSE, which is dominated by noisy slots.
+# Same data, start weights and epoch limit as nn.yaml; only the loss differs.
+base: ../nn.yaml
+name: A
+
+training:
+  loss: mse

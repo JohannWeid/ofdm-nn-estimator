@@ -1,16 +1,15 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
-> **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped,
-> and a second training loss is tested. Ablations and int8/C++ deployment come next.
+> **Status: work in progress.** The CNN is trained and evaluated, and its failure range is
+> mapped. Ablations and int8/C++ deployment come next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
-the LS + linear channel estimate by 5.4 dB NMSE at 10 dB SNR, which is 1.1 dB SNR at a BER
-of 1e-2 and 0.8 dB short of LMMSE with exact channel statistics. Its gain shrinks to 0.3 dB
+the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
+of 1e-2 and 0.7 dB short of LMMSE with exact channel statistics. Its gain shrinks to 2.1 dB
 at 30 dB SNR. On channels it has never seen (larger delay spread, higher Doppler) it only
-helps below about 10 dB SNR and is up to 1.8 dB *worse* than LS + linear above that. A
+helps below about 10 dB SNR and is up to 1.5 dB *worse* than LS + linear above that. A
 failure map traces this to Doppler: the CNN smooths the channel over time by a nearly fixed
-amount, whereas LMMSE adapts its smoothing to the channel. A loss that counts every slot
-equally lifts the gain at 30 dB to 2.1 dB but does not fix the Doppler problem.
+amount, whereas LMMSE adapts its smoothing to the channel.
 
 | Phase | Content | Status |
 |---|---|---|
@@ -52,9 +51,10 @@ scratch:
 - **Data**: 32,000 training slots from region A with SNR uniform in 0-30 dB, generated
   in memory from fixed seeds (about 90 s on a laptop CPU) instead of being stored.
   Validation and test sets use separate seeds; region B is never used for training.
-- **Training**: Adam, MSE loss, 100 epochs, about one hour on a laptop CPU
-  ([training curve](results/training_A.png)). Validation NMSE over mixed SNR: -15.9 dB,
-  against -9.8 dB for the network input.
+- **Training**: Adam with a log-NMSE loss, the mean NMSE in dB over the slots, so that every
+  slot counts equally. Early stopping ended it after 71 epochs (best epoch 61), about 26 minutes
+  on a laptop CPU ([training curve](results/training_A_log_nmse.png)). Validation NMSE over
+  mixed SNR: -15.7 dB, against -9.8 dB for the network input.
 
 Note on fairness: the network is given the SNR, the interpolation baselines are not. An
 ablation without the SNR plane is planned to quantify this.
@@ -92,22 +92,21 @@ The CNN was trained on region A only.
 |---|---|---|---|---|---|---|---|---|
 | LS + linear | -1.6 | -11.5 | -21.3 | -29.2 | -1.4 | -10.2 | -14.9 | -15.9 |
 | LS + spline | -0.1 | -10.1 | -20.0 | -28.9 | 0.0 | -9.2 | -15.2 | -16.7 |
-| **CNN** | **-8.2** | **-16.9** | **-23.9** | **-29.5** | **-5.6** | **-9.6** | **-13.5** | **-15.9** |
+| **CNN** | **-7.9** | **-16.9** | **-24.5** | **-31.3** | **-5.6** | **-9.9** | **-13.5** | **-16.0** |
 | LMMSE (known statistics) | -12.4 | -20.2 | -28.6 | -37.2 | -7.5 | -14.4 | -21.8 | -26.5 |
 
 | SNR needed for the target BER | LS + linear | CNN | LMMSE | Perfect CSI |
 |---|---|---|---|---|
-| Region A, BER 1e-2 | 19.4 dB | 18.3 dB | 17.5 dB | 16.9 dB |
+| Region A, BER 1e-2 | 19.4 dB | 18.2 dB | 17.5 dB | 16.9 dB |
 | Region A, BER 3e-2 | 14.1 dB | 12.7 dB | 12.2 dB | 11.7 dB |
 | Region B, BER 3e-2 | 16.0 dB | 18.2 dB | 13.5 dB | 11.9 dB |
 
-**Region A (same conditions as in training).** The CNN gains 6.7 dB NMSE over LS + linear at
-0 dB SNR, without being told the channel statistics. The gain then shrinks steadily to 0.3 dB
-at 30 dB, while the distance to LMMSE grows from 3.3 dB at 10 dB to 7.7 dB. The training loss
-explains part of this, as the experiment below shows.
+**Region A (same conditions as in training).** The CNN gains 6.3 dB NMSE over LS + linear at
+0 dB SNR, without being told the channel statistics. The gain then shrinks steadily to 2.1 dB
+at 30 dB, while the distance to LMMSE grows from 3.3 dB at 10 dB to 5.9 dB at 30 dB.
 
 **Region B (never seen in training).** The CNN still helps at low SNR (+4.2 dB at 0 dB) but is
-worse than its own input from 10 to 25 dB, by up to 1.8 dB, and level with it at 30 dB. At a
+worse than its own input from 10 to 25 dB, by up to 1.5 dB, and level with it at 30 dB. At a
 BER of 3e-2 this costs 2.2 dB SNR compared to plain LS + linear; the section on failures below
 explains why. **The model should not be used outside its training range without a check.**
 
@@ -119,10 +118,11 @@ delay taps beyond the cyclic prefix. Baselines alone: `scripts/run_baselines.py`
 
 ### Does the training loss matter?
 
-The error energy is 133 times larger at 0 dB than at 30 dB SNR, so an unweighted MSE is
-dominated by noisy slots. To test whether this causes the weak gain at high SNR, a second model
-([`configs/experiments/log_nmse.yaml`](configs/experiments/log_nmse.yaml)) minimizes the mean
-NMSE in dB over the slots, so that every slot counts equally. Data and start weights are the same.
+The first model used an unweighted MSE ([`configs/experiments/mse.yaml`](configs/experiments/mse.yaml))
+and gained only 0.3 dB at 30 dB SNR. Its error energy is 133 times larger at 0 dB than at 30 dB,
+so noisy slots dominate that loss. The log-NMSE loss tests whether this causes the weak gain.
+Data and start weights are the same. All other results in this README use the log-NMSE model,
+because it gains more on average over the SNR points (4.3 dB against 3.9 dB in region A).
 
 ![CNN with MSE and log-NMSE loss in region A](results/loss_comparison_A.png)
 
@@ -138,8 +138,7 @@ NMSE in dB over the slots, so that every slot counts equally. Data and start wei
 - **It does not fix region B.** The CNN stays worse than LS + linear from 10 to 25 dB, as
   expected if the problem is the Doppler range rather than the weighting of the slots.
 - **Caveats:** one training run per loss. Early stopping ended the log-NMSE run after 71 epochs
-  (best epoch 61), the MSE run used all 100. All other results in this README still use the
-  MSE model.
+  (best epoch 61), the MSE run used all 100.
 
 ### Where the CNN fails
 
@@ -148,13 +147,15 @@ Blue means the CNN is better than the reference, red means it is worse.
 
 ![NMSE difference of the CNN over delay spread and Doppler](results/failure_map.png)
 
-- **Doppler does the damage.** Without Doppler the CNN is never clearly worse than LS + linear,
-  at any delay spread (at most +0.2 dB). A larger delay spread only removes its advantage: at
-  10 dB SNR the gain falls from 6.0 dB at 0.1 us to 0.5 dB at 1.5 us.
-- **The higher the SNR, the earlier it turns harmful.** The CNN falls behind LS + linear from
-  about 400-500 Hz at 10 dB SNR and from about 200-300 Hz at 20 dB. Training only covered up
-  to 150 Hz. The largest loss in the map is 3.4 dB (20 dB SNR, 0.1 us, 600 Hz).
-- **At 30 dB there is hardly any gain, even in region A:** between +0.3 and -0.8 dB.
+- **Doppler does the damage.** Without Doppler the CNN beats LS + linear at every delay spread
+  and SNR in the map. A larger delay spread only shrinks its advantage: at 10 dB SNR the gain
+  falls from 5.9 dB at 0.1 us to 0.8 dB at 1.5 us.
+- **Where it turns harmful depends on the SNR.** Training only covered up to 150 Hz. The CNN
+  falls behind LS + linear from 400-600 Hz at 10 dB SNR and from 300 Hz at 20 dB. At 30 dB
+  this happens from 200-300 Hz at small delay spreads but only from 500-600 Hz at large ones.
+  The largest loss in the map is 3.1 dB (20 dB SNR, 0.1 us, 600 Hz).
+- **Inside its training range it is reliably better:** between 1.6 and 2.8 dB at 30 dB SNR, and
+  more at lower SNR.
 
 To check whether smoothing explains this, `python scripts/tracking_check.py` measures which
 share of the true channel change over 3 OFDM symbols arrives in the estimate (1 = all of it;
@@ -163,7 +164,7 @@ noise does not bias this measure). Delay spread 0.3 us:
 | Share of true change over time | 10 dB, 50 Hz | 10 dB, 600 Hz | 20 dB, 50 Hz | 20 dB, 600 Hz |
 |---|---|---|---|---|
 | LS + linear | 1.00 | 0.93 | 0.99 | 0.93 |
-| CNN | 0.62 | 0.52 | 0.77 | 0.71 |
+| CNN | 0.63 | 0.53 | 0.80 | 0.71 |
 | LMMSE (known statistics) | 0.56 | 0.95 | 0.90 | 0.99 |
 
 Smoothing itself is not the problem: at low Doppler LMMSE smooths at least as much at 10 dB

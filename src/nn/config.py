@@ -35,7 +35,7 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class TrainConfig:
-    loss: str = "mse"
+    loss: str = "log_nmse"
     batch_size: int = 128
     lr: float = 1e-3
     max_epochs: int = 100
@@ -53,7 +53,7 @@ class FailureMapConfig:
 
 @dataclass(frozen=True)
 class NNConfig:
-    name: str = "A"
+    name: str = "A_log_nmse"
     seed: int = 0
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -72,7 +72,7 @@ def nn_config_from_dict(raw: dict[str, Any]) -> NNConfig:
         k: tuple(v) if isinstance(v, list) else v for k, v in raw.get("failure_map", {}).items()
     }
     return NNConfig(
-        name=str(raw.get("name", "A")),
+        name=str(raw.get("name", "A_log_nmse")),
         seed=int(raw.get("seed", 0)),
         data=DataConfig(**data),
         model=ModelConfig(**raw.get("model", {})),

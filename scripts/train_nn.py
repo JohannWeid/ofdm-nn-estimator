@@ -1,9 +1,9 @@
 """Train the residual CNN on slots from one channel region.
 
 Examples:
-    python scripts/train_nn.py                  # full training -> models/cnn_A.pt
+    python scripts/train_nn.py                  # full training -> models/cnn_A_log_nmse.pt
     python scripts/train_nn.py --overfit 256    # sanity check: can it memorize 256 slots?
-    python scripts/train_nn.py --nn-config configs/experiments/log_nmse.yaml
+    python scripts/train_nn.py --nn-config configs/experiments/mse.yaml
 """
 
 from __future__ import annotations

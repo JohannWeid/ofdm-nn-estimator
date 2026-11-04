@@ -27,11 +27,14 @@ def test_untrained_model_reproduces_ls_linear(sim: LinkSimulator, cfg: Config) -
     np.testing.assert_allclose(h_cnn, h_ls, rtol=1e-5, atol=1e-6)
 
 
-def test_committed_model_beats_ls_linear_in_region_a(sim: LinkSimulator, cfg: Config) -> None:
-    """End-to-end check of models/cnn_A.pt through the normal evaluation path."""
+@pytest.mark.parametrize("model_file", ["cnn_A_log_nmse.pt", "cnn_A.pt"])
+def test_committed_models_beat_ls_linear_in_region_a(
+    sim: LinkSimulator, cfg: Config, model_file: str
+) -> None:
+    """End-to-end check of the stored weights through the normal evaluation path."""
     estimators = {
         "ls_linear": InterpolationEstimator(sim.pattern, "linear"),
-        "cnn": NeuralEstimator(load_model(ROOT / "models" / "cnn_A.pt"), sim.pattern),
+        "cnn": NeuralEstimator(load_model(ROOT / "models" / model_file), sim.pattern),
     }
     rows = evaluate(
         sim, estimators, cfg.regions["A"], [10.0], n_slots=100, batch_size=100,

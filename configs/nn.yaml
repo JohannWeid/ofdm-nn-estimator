@@ -1,7 +1,7 @@
 # Neural estimator: data, model and training.
 # OFDM, pilot and channel settings come from default.yaml.
 
-name: A                       # models/cnn_<name>.pt and results/training_<name>.*
+name: A_log_nmse              # models/cnn_<name>.pt and results/training_<name>.*
 seed: 0                       # weight init and batch shuffling
 
 data:
@@ -20,7 +20,7 @@ model:
   use_snr: true
 
 training:
-  loss: mse                   # mse | log_nmse
+  loss: log_nmse              # log_nmse (every slot counts equally) | mse
   batch_size: 128
   lr: 1.0e-3
   max_epochs: 100

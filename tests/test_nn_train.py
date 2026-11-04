@@ -43,9 +43,12 @@ def test_nn_config_file_loads() -> None:
 
 def test_experiment_config_only_overrides_what_it_names() -> None:
     base = load_nn_config(ROOT / "configs" / "nn.yaml")
-    experiment = load_nn_config(ROOT / "configs" / "experiments" / "log_nmse.yaml")
+    experiment = load_nn_config(ROOT / "configs" / "experiments" / "mse.yaml")
     assert experiment.name != base.name
-    assert experiment.training.loss == "log_nmse" and base.training.loss == "mse"
+    assert experiment.training.loss == "mse" and base.training.loss == "log_nmse"
+    # Each config's name must point at the weights it produced.
+    assert (ROOT / "models" / f"cnn_{base.name}.pt").exists()
+    assert (ROOT / "models" / f"cnn_{experiment.name}.pt").exists()
     # Everything else must match, otherwise the comparison between the two would be unfair.
     assert experiment.data == base.data
     assert experiment.model == base.model
@@ -68,6 +71,15 @@ def test_log_nmse_counts_every_slot_equally() -> None:
 def test_unknown_loss_is_rejected() -> None:
     with pytest.raises(ValueError, match="unknown loss"):
         make_loss("nmse")
+
+
+def test_training_with_mse_improves_the_input(small_data) -> None:
+    train_data, val_data = small_data
+    cfg = TrainConfig(loss="mse", batch_size=32, lr=3e-3, max_epochs=6, patience=10)
+    result = train(build_model(ModelConfig()), train_data, val_data, cfg, seed=0, verbose=False)
+    x_val, y_val = (torch.from_numpy(a) for a in val_data)
+    assert result.best_val_nmse_db < nmse_db(x_val[:, :2], y_val)
+    assert result.best_val_loss < torch.nn.functional.mse_loss(x_val[:, :2], y_val).item()
 
 
 def test_training_with_log_nmse_improves_the_input(small_data) -> None:

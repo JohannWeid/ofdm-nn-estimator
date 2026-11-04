@@ -35,7 +35,7 @@ SNRS_DB = [10.0, 20.0]
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=ROOT / "configs" / "default.yaml")
-    parser.add_argument("--model", type=Path, default=ROOT / "models" / "cnn_A.pt")
+    parser.add_argument("--model", type=Path, default=ROOT / "models" / "cnn_A_log_nmse.pt")
     parser.add_argument("--n-slots", type=int, default=800, help="slots per condition and SNR")
     parser.add_argument("--seed", type=int, default=105)
     parser.add_argument("--out", type=Path, default=ROOT / "results")

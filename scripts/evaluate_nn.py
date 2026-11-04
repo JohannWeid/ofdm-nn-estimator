@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=ROOT / "configs" / "default.yaml")
     parser.add_argument("--nn-config", type=Path, default=ROOT / "configs" / "nn.yaml")
     parser.add_argument("--model", action="append", metavar="NAME=PATH",
-                        help="repeatable, NAME from ofdm.plotting.STYLE; default: models/cnn_A.pt")
+                        help="repeatable, NAME from ofdm.plotting.STYLE; default: nn.yaml's model")
     parser.add_argument("--baselines", nargs="*", help="subset of the baselines, default all")
     parser.add_argument("--region", default="A", help="region name from the config")
     parser.add_argument("--n-slots", type=int, help="override data.test_slots")
@@ -48,7 +48,7 @@ def main() -> None:
     estimators = baseline_estimators(sim.pattern, cfg.ofdm)
     if args.baselines is not None:
         estimators = {name: estimators[name] for name in args.baselines}
-    for spec in args.model or [f"cnn={ROOT / 'models' / 'cnn_A.pt'}"]:
+    for spec in args.model or [f"cnn_log_nmse={ROOT / 'models' / f'cnn_{nn_cfg.name}.pt'}"]:
         name, path = spec.split("=", 1)
         estimators[name] = NeuralEstimator(load_model(path), sim.pattern)
     rng = np.random.default_rng(nn_cfg.data.test_seeds[args.region])

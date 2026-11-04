@@ -108,19 +108,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=ROOT / "configs" / "default.yaml")
     parser.add_argument("--nn-config", type=Path, default=ROOT / "configs" / "nn.yaml")
-    parser.add_argument("--model", type=Path, default=ROOT / "models" / "cnn_A.pt")
+    parser.add_argument("--model", type=Path, help="default: the model named in nn.yaml")
     parser.add_argument("--n-slots", type=int, help="override failure_map.n_slots")
     parser.add_argument("--out", type=Path, default=ROOT / "results")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    map_cfg = load_nn_config(args.nn_config).failure_map
+    nn_cfg = load_nn_config(args.nn_config)
+    map_cfg = nn_cfg.failure_map
+    model_path = args.model or ROOT / "models" / f"cnn_{nn_cfg.name}.pt"
     sim = LinkSimulator(cfg)
     baselines = baseline_estimators(sim.pattern, cfg.ofdm)
     estimators = {
         "ls_linear": baselines["ls_linear"],
         "lmmse": baselines["lmmse"],
-        "cnn": NeuralEstimator(load_model(args.model), sim.pattern),
+        "cnn": NeuralEstimator(load_model(model_path), sim.pattern),
     }
     delays = [float(d) for d in map_cfg.delay_spread_us]
     dopplers = [float(f) for f in map_cfg.doppler_hz]

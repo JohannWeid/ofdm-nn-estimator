@@ -1,7 +1,0 @@
-# Does the unweighted MSE cause the weak gain at high SNR?
-# Same data, start weights and epochs as nn.yaml; every slot now counts equally.
-base: ../nn.yaml
-name: A_log_nmse
-
-training:
-  loss: log_nmse
