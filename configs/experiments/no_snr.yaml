@@ -1,0 +1,6 @@
+# Ablation: how much does it help the network to know the SNR?
+base: ../nn.yaml
+name: A_no_snr
+
+model:
+  use_snr: false

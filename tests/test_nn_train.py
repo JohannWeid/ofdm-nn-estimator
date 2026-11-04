@@ -117,16 +117,41 @@ def test_early_stopping(small_data) -> None:
     assert len(result.history) == 3
 
 
-def test_same_seed_gives_same_weights(small_data) -> None:
+def flat_weights(model: torch.nn.Module) -> torch.Tensor:
+    return torch.cat([p.flatten() for p in model.parameters()]).detach()
+
+
+def test_seed_fixes_the_start_weights() -> None:
+    # Random state in between must not matter, as in two separate script runs.
+    first = flat_weights(build_model(ModelConfig(), seed=0))
+    torch.rand(7)
+    assert torch.equal(first, flat_weights(build_model(ModelConfig(), seed=0)))
+    assert not torch.equal(first, flat_weights(build_model(ModelConfig(), seed=1)))
+
+
+def test_same_seed_gives_same_trained_weights(small_data) -> None:
     train_data, val_data = small_data
     cfg = TrainConfig(batch_size=64, lr=1e-3, max_epochs=2, patience=10)
     weights = []
     for _ in range(2):
-        torch.manual_seed(123)  # identical init
-        model = build_model(ModelConfig())
+        torch.rand(3)  # the global random state differs between the runs
+        model = build_model(ModelConfig(), seed=0)
         train(model, train_data, val_data, cfg, seed=0, verbose=False)
-        weights.append(torch.cat([p.flatten() for p in model.parameters()]))
+        weights.append(flat_weights(model))
     torch.testing.assert_close(weights[0], weights[1])
+
+
+def test_all_experiment_configs_load_and_name_their_own_model() -> None:
+    base = load_nn_config(ROOT / "configs" / "nn.yaml")
+    configs = [load_nn_config(p) for p in (ROOT / "configs" / "experiments").glob("*.yaml")]
+    assert len(configs) >= 6
+    names = [c.name for c in configs] + [base.name]
+    assert len(set(names)) == len(names), "a shared name would overwrite another model"
+    for c in configs:
+        # The evaluation must stay comparable across all variants.
+        assert c.data.val == base.data.val
+        assert c.data.test_seeds == base.data.test_seeds
+        assert c.data.train.seed == base.data.train.seed
 
 
 def test_save_and_load_roundtrip(tmp_path: Path) -> None:

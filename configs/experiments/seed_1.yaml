@@ -1,0 +1,5 @@
+# How much do results vary between runs? Only the random start weights and the batch order
+# differ from nn.yaml. Differences between models smaller than this are not meaningful.
+base: ../nn.yaml
+name: A_seed_1
+seed: 1

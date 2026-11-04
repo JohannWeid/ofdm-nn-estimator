@@ -1,0 +1,7 @@
+# Ablation: half the channels and one layer less. Is a smaller network enough for embedded use?
+base: ../nn.yaml
+name: A_small
+
+model:
+  channels: 8
+  layers: 3

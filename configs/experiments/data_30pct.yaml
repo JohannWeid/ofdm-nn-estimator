@@ -1,0 +1,11 @@
+# Ablation: 30 % of the training data. The epoch limits grow so that the number of gradient
+# steps stays the same; otherwise less data would also mean less training.
+base: ../nn.yaml
+name: A_data_30pct
+
+data:
+  train: {n_slots: 9600}
+
+training:
+  max_epochs: 333
+  patience: 33

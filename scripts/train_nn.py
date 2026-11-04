@@ -89,7 +89,7 @@ def main() -> None:
           f"{data_cfg.region} in {time.perf_counter() - t0:.0f} s")
     print(f"input (LS + linear) NMSE on the validation set: {input_nmse:.2f} dB")
 
-    model = build_model(nn_cfg.model)
+    model = build_model(nn_cfg.model, seed=nn_cfg.seed)
     print(f"model: {count_parameters(model)} parameters, "
           f"{macs_per_slot(model) / 1e6:.2f} M MACs per slot")
 

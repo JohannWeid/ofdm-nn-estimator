@@ -1,0 +1,7 @@
+variant,parameters,macs_per_slot,train_slots,best_epoch,gradient_steps
+standard,5378,5370624,32000,100,25000
+other seed,5378,5370624,32000,89,24750
+no SNR plane,5234,5225472,32000,98,25000
+small model,954,943488,32000,100,25000
+30 % data,5378,5370624,9600,324,24975
+10 % data,5378,5370624,3200,749,21225

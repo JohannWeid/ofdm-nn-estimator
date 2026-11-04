@@ -46,7 +46,10 @@ class ResidualCNN(torch.nn.Module):
         return x[:, :2] + self.body(features)
 
 
-def build_model(cfg: ModelConfig) -> ResidualCNN:
+def build_model(cfg: ModelConfig, seed: int | None = None) -> ResidualCNN:
+    """Create the model; a seed makes the random start weights reproducible."""
+    if seed is not None:
+        torch.manual_seed(seed)
     return ResidualCNN(cfg.channels, cfg.layers, cfg.kernel_size, cfg.use_snr)
 
 
