@@ -22,8 +22,8 @@ receiver.
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
 | 4 | ONNX export, int8 quantization, C++ inference, latency, C++ tests in CI | done |
-| 5 | Browser demo: int8 network and simulator in JavaScript | done |
-| 5 | Browser demo: estimators, page, GitHub Pages | next |
+| 5 | Browser demo: simulator, receiver and int8 network in JavaScript | done |
+| 5 | Browser demo: page, GitHub Pages | next |
 
 ## Method
 
@@ -319,7 +319,10 @@ independent implementation. [`web/js/network.js`](web/js/network.js) is one: pla
 any library, which does the rounding, zero points and scaling itself. Its int8 output matches the same
 reference bit for bit, and also ONNX Runtime on 600 further slots with values far beyond the int8
 range (once, by hand). It takes about 6 ms per slot in Node, so it is a check and a demo, not a
-replacement for the C++ code.
+replacement for the C++ code. The whole chain in JavaScript (simulator, LS + linear, network) stays
+within 0.19 dB of the NMSE values above in both regions, with its own random numbers and 1000 slots
+per SNR (`node web/tests/compare_with_python.mjs`). Runs of that length differ by about 0.1 dB
+between seeds, in Python as well.
 
 The sanitizer run was made by hand. The CI builds the C++ code and runs
 its tests on every push, on the CPU of the runner and again on an emulated Haswell without VNNI.
@@ -418,7 +421,7 @@ src/nn/             training data, CNN model, training, estimator wrapper, expor
 models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest, test vectors in testdata/
-web/                int8 network and simulator in JavaScript; demo for GitHub Pages (Phase 5)
+web/                simulator, receiver and int8 network in JavaScript; demo (Phase 5)
 scripts/            entry points that produce results/
 results/            plots and tables
 .github/workflows/  CI

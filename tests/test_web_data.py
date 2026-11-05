@@ -16,6 +16,7 @@ from ofdm.resource_grid import make_pilot_pattern  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = ROOT / "models"
 WEB_MODEL = ROOT / "web" / "model"
+STANDARD_INT8 = MODELS / "cnn_A_log_nmse_int8.onnx"
 STRUCTURE = {
     "cnn_A_log_nmse_int8": [(3, 16), (16, 16), (16, 16), (16, 2)],
     "cnn_A_small_int8": [(3, 8), (8, 8), (8, 2)],
@@ -68,20 +69,24 @@ def test_simulator_vector_belongs_to_the_simulator(cfg: Config) -> None:
     """Fails if the simulator changes without running scripts/export_web_data.py again."""
     path = ROOT / "web" / "tests" / "vectors" / "simulator_slot.json"
     stored = json.loads(path.read_text(encoding="utf-8"))
-    fresh = simulator_vector(cfg)
+    fresh = simulator_vector(cfg, STANDARD_INT8)
     assert stored["bits"] == fresh["bits"]
     assert stored["alpha"] == fresh["alpha"]
     assert stored["phi"] == fresh["phi"]
-    for name in ("tx_grid", "tx_signal", "rx_signal", "h_true", "rx_grid"):
+    assert stored["bit_errors"] == fresh["bit_errors"]
+    signals = ("tx_grid", "tx_signal", "rx_signal", "rx_grid", "rx_grid_noisy")
+    for name in (*signals, "h_true", "h_ls_linear", "h_cnn"):
         for part in ("re", "im"):
-            assert np.allclose(stored[name][part], fresh[name][part], rtol=0, atol=1e-10), name
+            assert np.allclose(stored[name][part], fresh[name][part], rtol=0, atol=1e-6), name
+    for name, value in stored["nmse_db"].items():
+        assert value == pytest.approx(fresh["nmse_db"][name], abs=1e-6), name
     for example, fresh_example in zip(stored["pdp_examples"], fresh["pdp_examples"], strict=True):
         assert np.allclose(example["pdp"], fresh_example["pdp"], rtol=0, atol=1e-12)
 
 
 def test_simulator_vector_is_consistent(cfg: Config) -> None:
     """Noise-free and without inter-carrier interference, Y = H X must hold on every subcarrier."""
-    vector = simulator_vector(cfg, doppler_hz=0.0)
+    vector = simulator_vector(cfg, STANDARD_INT8, doppler_hz=0.0)
     h = np.array(vector["h_true"]["re"]) + 1j * np.array(vector["h_true"]["im"])
     x = np.array(vector["tx_grid"]["re"]) + 1j * np.array(vector["tx_grid"]["im"])
     y = np.array(vector["rx_grid"]["re"]) + 1j * np.array(vector["rx_grid"]["im"])

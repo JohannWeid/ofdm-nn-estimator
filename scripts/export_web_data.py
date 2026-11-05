@@ -40,7 +40,8 @@ def main() -> None:
     for name in MODELS:
         write_json(int8_layers(args.models / f"{name}.onnx"), args.out / "model" / f"{name}.json")
     write_json(link_data(cfg), args.out / "model" / "link.json")
-    write_json(simulator_vector(cfg), args.out / "tests" / "vectors" / "simulator_slot.json")
+    vector = simulator_vector(cfg, args.models / f"{MODELS[0]}.onnx")
+    write_json(vector, args.out / "tests" / "vectors" / "simulator_slot.json")
 
 
 if __name__ == "__main__":

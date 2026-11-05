@@ -6,11 +6,13 @@ from pathlib import Path
 
 import numpy as np
 import onnx
+import onnxruntime as ort
 from onnx import numpy_helper
 
 from ofdm import Config, LinkSimulator
 from ofdm import ofdm as ofdm_mod
 from ofdm.channel import (
+    add_awgn,
     apply_channel,
     exponential_pdp,
     fixed_profiles,
@@ -18,8 +20,12 @@ from ofdm.channel import (
     generate_taps,
     pdp_matrix,
 )
+from ofdm.estimators import InterpolationEstimator
+from ofdm.modulation import demodulate
 from ofdm.ofdm import subcarrier_bins
 from ofdm.resource_grid import make_pilot_pattern
+
+from .dataset import SNR_SCALE_DB, to_input
 
 SUPPORTED_NODES = {"QuantizeLinear", "DequantizeLinear", "Conv", "Relu"}
 SUPPORTED_CONV = {
@@ -96,12 +102,17 @@ def _rounded(z: np.ndarray) -> dict:
 
 
 def simulator_vector(
-    cfg: Config, seed: int = 106, delay_spread_us: float = 0.5, doppler_hz: float = 300.0
+    cfg: Config,
+    int8_model: str | Path,
+    seed: int = 106,
+    delay_spread_us: float = 0.5,
+    doppler_hz: float = 300.0,
+    snr_db: float = 10.0,
 ) -> dict:
-    """One noise-free slot through the Python simulator, to compare the JavaScript one with.
+    """One slot through the Python simulator and receiver, to compare the JavaScript ones with.
 
     The random numbers are part of the result, because JavaScript cannot reproduce NumPy's
-    generator: it gets the same bits and angles and has to produce the same signals.
+    generator: it gets the same bits, angles and noisy grid and has to produce the same results.
     """
     sim = LinkSimulator(cfg)
     rng = np.random.default_rng(seed)
@@ -116,10 +127,30 @@ def simulator_vector(
     rng.bit_generator.state = state
     realization = generate_taps(profiles, cfg.ofdm, cfg.channel, rng)
     rx_signal = apply_channel(tx_signal, realization)
+    h_true = frequency_response(realization, cfg.ofdm)
+
+    # The receiver works on the rounded grid, the same one JavaScript gets from the file.
+    noisy = add_awgn(rx_signal, np.array([10 ** (-snr_db / 10)]), rng)
+    rx_grid = np.round(ofdm_mod.demodulate(noisy, cfg.ofdm), 12)
+    h_ls = InterpolationEstimator(sim.pattern, "linear").interpolate(rx_grid)
+    x = to_input(h_ls, np.array([snr_db]))
+    session = ort.InferenceSession(str(int8_model), providers=["CPUExecutionProvider"])
+    y = x[:, :2] + session.run(None, {session.get_inputs()[0].name: x})[0]
+    h_cnn = y[:, 0].astype(np.float64) + 1j * y[:, 1].astype(np.float64)
+
+    def nmse_db(estimate: np.ndarray) -> float:
+        error = np.sum(np.abs(estimate - h_true) ** 2)
+        return float(10 * np.log10(error / np.sum(np.abs(h_true) ** 2)))
+
+    def bit_errors(estimate: np.ndarray) -> int:
+        data = ~sim.pattern.mask
+        decided = demodulate(rx_grid[:, data] / estimate[:, data], cfg.ofdm.modulation)
+        return int(np.count_nonzero(decided != bits))
 
     return {
         "delay_spread_us": delay_spread_us,
         "doppler_hz": doppler_hz,
+        "snr_db": snr_db,
         "bits": bits.ravel().tolist(),
         "alpha": alpha.ravel().tolist(),
         "phi": phi.ravel().tolist(),
@@ -127,8 +158,17 @@ def simulator_vector(
         "tx_grid": _rounded(tx_grid),
         "tx_signal": _rounded(tx_signal),
         "rx_signal": _rounded(rx_signal),
-        "h_true": _rounded(frequency_response(realization, cfg.ofdm)),
+        "h_true": _rounded(h_true),
         "rx_grid": _rounded(ofdm_mod.demodulate(rx_signal, cfg.ofdm)),
+        "rx_grid_noisy": _rounded(rx_grid),
+        "h_ls_linear": _rounded(h_ls),
+        "h_cnn": _rounded(h_cnn),
+        "nmse_db": {"ls_linear": nmse_db(h_ls), "cnn": nmse_db(h_cnn)},
+        "bit_errors": {
+            "ls_linear": bit_errors(h_ls),
+            "cnn": bit_errors(h_cnn),
+            "perfect": bit_errors(h_true),
+        },
         "pdp_examples": [
             {
                 "delay_spread_us": tau,
@@ -160,6 +200,7 @@ def link_data(cfg: Config) -> dict:
         "cp_length": cfg.ofdm.cp_length,
         "sample_rate_hz": cfg.ofdm.sample_rate_hz,
         "modulation": cfg.ofdm.modulation,
+        "snr_scale_db": SNR_SCALE_DB,
         "subcarrier_bins": subcarrier_bins(cfg.ofdm).tolist(),
         "pilots": {
             "symbol": symbols.tolist(),
