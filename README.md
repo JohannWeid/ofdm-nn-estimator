@@ -1,8 +1,8 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
-> and its building blocks are tested in ablations. It is exported to ONNX and quantized to int8;
-> C++ inference and latency come next.
+> and its building blocks are tested in ablations. It is exported to ONNX, quantized to int8 and
+> runs in C++; the latency measurement comes next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
@@ -19,8 +19,8 @@ at that BER. Quantized to int8, the standard model loses at most 0.36 dB NMSE in
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
-| 4 | ONNX export, int8 quantization | done |
-| 4 | C++ inference, latency | next |
+| 4 | ONNX export, int8 quantization, C++ inference | done |
+| 4 | Latency, C++ tests in CI | next |
 | 5 | Browser demo on GitHub Pages | planned |
 
 ## Method
@@ -94,6 +94,14 @@ roughly half an hour on a laptop CPU:
 pip install -e ".[deploy]"
 python scripts/export_onnx.py
 python scripts/compare_quantization.py
+```
+
+The C++ inference needs Linux on x86-64 (WSL works), see [`cpp/README.md`](cpp/README.md):
+
+```bash
+cmake -S cpp -B ~/build/ofdm-cpp -G Ninja
+cmake --build ~/build/ofdm-cpp
+ctest --test-dir ~/build/ofdm-cpp --output-on-failure
 ```
 
 All parameters live in [`configs/default.yaml`](configs/default.yaml); every figure is
@@ -295,6 +303,18 @@ the addition inside the model, one weight step size per layer and the full value
   LS + linear at 30 dB. At a BER of 1e-2 it falls 0.32 dB behind the standard model, against 0.21 dB
   in FP32. It is therefore no easy replacement if the standard model turns out too slow.
 
+### C++ inference
+
+[`cpp/`](cpp/) runs both models through the ONNX Runtime C++ API, one slot at a time, on the memory of
+the caller. GoogleTest compares the result with reference outputs from ONNX Runtime in Python
+(`python scripts/make_test_vectors.py`): five slots, one of which forces the int8 models to clip
+their input. All 10,080 values per model are bit-identical, for FP32 and int8, also on the emulated
+Haswell and EPYC-Milan CPUs. A build with AddressSanitizer and UndefinedBehaviorSanitizer runs clean.
+
+Both sides use the same library, so this checks the C++ wrapper and the data layout, not an
+independent implementation. The emulated and sanitizer runs were made by hand, and the C++ tests are
+not in the CI yet.
+
 ### Limitations
 
 - LMMSE is not a practical competitor here but an upper bound: it knows the exact per-slot
@@ -318,7 +338,7 @@ src/ofdm/           simulation, channel, baselines
 src/nn/             training data, CNN model, training, estimator wrapper, export, quantization
 models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
-cpp/                test vectors in testdata/; C++ inference, CMake, GoogleTest (Phase 4)
+cpp/                C++ inference, CMake, GoogleTest, test vectors in testdata/
 web/                demo for GitHub Pages                 (Phase 5)
 scripts/            entry points that produce results/
 results/            plots and tables

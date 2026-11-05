@@ -1,5 +1,6 @@
 """The reference data for the C++ tests has to belong to the committed models (Phase 4, step 3)."""
 
+import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,14 @@ MAX_DEVIATION = 1e-5
 
 def read(name: str, channels: int) -> np.ndarray:
     return np.fromfile(TESTDATA / f"{name}.bin", dtype="<f4").reshape(-1, channels, 14, 72)
+
+
+def test_cpp_and_python_use_the_same_onnx_runtime() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    pinned = next(d for d in project["optional-dependencies"]["deploy"] if "onnxruntime" in d)
+    version = pinned.split("==")[1]
+    cmake = (ROOT / "cpp" / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert f"onnxruntime-linux-x64-{version}.tgz" in cmake
 
 
 def test_input_holds_one_slot_per_snr_and_a_doubled_one() -> None:
