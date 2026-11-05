@@ -22,7 +22,8 @@ receiver.
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
 | 4 | ONNX export, int8 quantization, C++ inference, latency, C++ tests in CI | done |
-| 5 | Browser demo on GitHub Pages | next |
+| 5 | Browser demo: int8 network in JavaScript | done |
+| 5 | Browser demo: simulator, page, GitHub Pages | next |
 
 ## Method
 
@@ -282,8 +283,8 @@ the addition inside the model, one weight step size per layer and the full value
   x86 CPUs without VNNI add pairs of products in 16 bits, where 8-bit weights can overflow. CPUs
   emulated with QEMU (Haswell, EPYC-Milan) reproduced the CI numbers exactly and changed 23 % of the
   outputs. With 7-bit weights, the outputs are bit-identical on Windows, Linux, both emulated CPUs
-  and the CI runners seen so far (AMD EPYC 7763 without VNNI, Intel Xeon 6975P-C with AVX-512 VNNI),
-  and the standard model loses at most 0.04 dB against 8 bits. The runners change from job to job,
+  and the CI runners seen so far (AMD EPYC 7763 without VNNI, Intel Xeon 6975P-C and AMD EPYC 9V74
+  with AVX-512 VNNI), and the standard model loses at most 0.04 dB against 8 bits. The runners change from job to job,
   so the CI also runs the C++ tests on an emulated Haswell. The comparison of 8-bit and 7-bit files
   on emulated CPUs was made by hand and is not in a script. Other architectures were not tested.
 - **The naive way loses the gain at high SNR.** Only 0.07 dB remain at 30 dB. Moving the addition
@@ -314,7 +315,13 @@ their input. All 10,080 values per model are bit-identical, for FP32 and int8, a
 Haswell and EPYC-Milan CPUs. A build with AddressSanitizer and UndefinedBehaviorSanitizer runs clean.
 
 Both sides use the same library, so this checks the C++ wrapper and the data layout, not an
-independent implementation. The sanitizer run was made by hand. The CI builds the C++ code and runs
+independent implementation. [`web/js/network.js`](web/js/network.js) is one: plain JavaScript without
+any library, which does the rounding, zero points and scaling itself. Its int8 output matches the same
+reference bit for bit, and also ONNX Runtime on 600 further slots with values far beyond the int8
+range (once, by hand). It takes about 6 ms per slot in Node, so it is a check and a demo, not a
+replacement for the C++ code.
+
+The sanitizer run was made by hand. The CI builds the C++ code and runs
 its tests on every push, on the CPU of the runner and again on an emulated Haswell without VNNI.
 
 ### Latency
@@ -411,7 +418,7 @@ src/nn/             training data, CNN model, training, estimator wrapper, expor
 models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest, test vectors in testdata/
-web/                demo for GitHub Pages                 (Phase 5)
+web/                int8 network in JavaScript; demo for GitHub Pages (Phase 5)
 scripts/            entry points that produce results/
 results/            plots and tables
 .github/workflows/  CI

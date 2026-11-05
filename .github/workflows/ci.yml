@@ -52,4 +52,14 @@ jobs:
           sudo apt-get install -y qemu-user
           qemu-x86_64 -cpu Haswell build/cpp/test_cnn_correction
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Test
+        run: node --test "web/tests/*.test.mjs"
+
   # Phase 5: add a job that deploys web/ to GitHub Pages on pushes to main.
