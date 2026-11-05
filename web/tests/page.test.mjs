@@ -34,6 +34,14 @@ test("the page uses relative paths, because it does not live at the root of its 
   }
 });
 
+test("the controls only stay in view on screens that are tall enough", () => {
+  // On a phone in landscape they once covered almost the whole screen.
+  const css = read("style.css");
+  const beforeSticky = css.slice(0, css.indexOf("position: sticky"));
+  assert.match(beforeSticky.slice(beforeSticky.lastIndexOf("@media")), /min-height/);
+  assert.equal(css.split("position: sticky").length, 2);
+});
+
 test("the page loads nothing from other servers except links", () => {
   assert.doesNotMatch(html, /<script[^>]+src="https?:/);
   assert.doesNotMatch(html, /<link[^>]+href="https?:/);

@@ -82,9 +82,6 @@ section {
 }
 
 .controls {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   margin-top: 24px;
   padding: 16px;
   background: var(--surface);
@@ -422,12 +419,18 @@ canvas.wide {
     padding-top: 20px;
   }
 
-  .controls {
-    position: static;
-  }
-
   .hero {
     font-size: 2.5rem;
+  }
+}
+
+/* The controls stay in view while scrolling only where they leave enough room for the pictures. On a
+   phone in landscape they would cover almost the whole screen. */
+@media (min-width: 641px) and (min-height: 800px) {
+  .controls {
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
 }
 
