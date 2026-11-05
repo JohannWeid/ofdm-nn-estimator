@@ -1,11 +1,12 @@
 # Neural OFDM Channel Estimator with Embedded Deployment
 
-> **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
-> and its building blocks are tested in ablations. It is exported to ONNX, quantized to int8 and
-> runs in C++ within the slot time on a laptop. Try the
-> [browser demo](https://johannweid.github.io/ofdm-nn-estimator/).
+**[Try the live demo](https://johannweid.github.io/ofdm-nn-estimator/)**: move the sliders and see
+where the network helps and where it fails. It is simulated and computed in your browser, nothing to
+install.
 
-**Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
+[![The browser demo: sliders for SNR, delay spread and Doppler, the gain of the CNN over LS + linear, and the received constellations](results/web_demo.png)](https://johannweid.github.io/ofdm-nn-estimator/)
+
+**Result:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
 of 1e-2 and 0.7 dB short of LMMSE with exact channel statistics. Its gain shrinks to 2.1 dB
 at 30 dB SNR. On channels it has never seen (larger delay spread, higher Doppler) it clearly
@@ -23,8 +24,7 @@ receiver.
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
 | 4 | ONNX export, int8 quantization, C++ inference, latency, C++ tests in CI | done |
-| 5 | Browser demo: page, simulator, receiver and int8 network in JavaScript | done |
-| 5 | Browser demo: GitHub Pages | next |
+| 5 | Browser demo on GitHub Pages: page, simulator, receiver and int8 network in JavaScript | done |
 
 ## Method
 
@@ -105,6 +105,17 @@ The C++ inference needs Linux on x86-64 (WSL works), see [`cpp/README.md`](cpp/R
 cmake -S cpp -B ~/build/ofdm-cpp
 cmake --build ~/build/ofdm-cpp --parallel
 ctest --test-dir ~/build/ofdm-cpp --output-on-failure
+```
+
+The browser demo only needs Node for its tests and a local server to look at it, see
+[`web/README.md`](web/README.md):
+
+```bash
+node --test "web/tests/*.test.mjs"
+```
+
+```bash
+python -m http.server 8123 --directory web
 ```
 
 All parameters live in [`configs/default.yaml`](configs/default.yaml); every figure is
@@ -397,6 +408,17 @@ for such a target here. What can be said without one:
   accuracy has to be measured again on the target, not only speed.
 - **Timing.** Median and p99 say little about a hard deadline. That needs a real-time system and a
   worst-case analysis, neither of which is part of this project.
+
+### Browser demo
+
+The [demo](https://johannweid.github.io/ofdm-nn-estimator/) simulates each slot on the viewer's device,
+with no server and no packages; the whole page is under 100 KB. Inside the training range it shows the
+CNN ahead (+4.3 dB NMSE at 15 dB, 0.3 us, 100 Hz), and at 20 dB, 0.1 us and 600 Hz behind (-2.6 dB), in
+line with the failure map above. It warns when the settings leave the training range.
+
+It was checked by hand in Chromium on a laptop and in Chrome on an iPhone 15, where the numbers matched.
+Other browsers were not tested. Its timing is JavaScript in a browser, about 9 ms per slot on the laptop,
+and says nothing about a receiver.
 
 ### Limitations
 

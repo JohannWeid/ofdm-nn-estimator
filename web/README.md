@@ -1,5 +1,8 @@
 # Browser demo (Phase 5)
 
+Live at <https://johannweid.github.io/ofdm-nn-estimator/>, published by the CI from `main` when all
+tests pass.
+
 A static page with sliders for SNR, delay spread and Doppler, and constellations and channel pictures
 for classical and neural estimation. No install, no backend, no packages: everything runs in plain
 JavaScript on the viewer's device.
