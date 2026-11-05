@@ -8,8 +8,8 @@ jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -30,7 +30,7 @@ jobs:
   cpp:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show system
         run: |
           grep -m1 "model name" /proc/cpuinfo
@@ -55,11 +55,34 @@ jobs:
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: Test
         run: node --test "web/tests/*.test.mjs"
 
-  # Phase 5: add a job that deploys web/ to GitHub Pages on pushes to main.
+  # Publishes the browser demo, only from main and only when all tests pass. It needs
+  # Settings > Pages > Source set to "GitHub Actions" in the repository.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python, cpp, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Collect the files of the page
+        run: |
+          mkdir site
+          cp -r web/index.html web/style.css web/js web/model site/
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5
