@@ -81,8 +81,13 @@ jobs:
         run: |
           mkdir site
           cp -r web/index.html web/style.css web/js web/model site/
+      # One name per attempt: a re-run keeps the files of the earlier attempts, and with the same
+      # name deploy-pages stops because it finds several artifacts.
       - uses: actions/upload-pages-artifact@v5
         with:
+          name: github-pages-${{ github.run_attempt }}
           path: site
       - id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}

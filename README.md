@@ -2,8 +2,8 @@
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
 > and its building blocks are tested in ablations. It is exported to ONNX, quantized to int8 and
-> runs in C++ within the slot time on a laptop. A [browser demo](web/) is written and about to be
-> published.
+> runs in C++ within the slot time on a laptop. Try the
+> [browser demo](https://johannweid.github.io/ofdm-nn-estimator/).
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
