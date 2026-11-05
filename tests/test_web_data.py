@@ -54,7 +54,14 @@ def test_number_of_parameters_matches_the_models() -> None:
 
 def test_link_file_matches_the_configuration(cfg: Config) -> None:
     """Fails if the configuration changes without running scripts/export_web_data.py again."""
-    assert read_json("link") == link_data(cfg)
+    stored, fresh = read_json("link"), link_data(cfg)
+    stored_pilots, fresh_pilots = stored.pop("pilots"), fresh.pop("pilots")
+    assert stored == fresh
+    assert stored_pilots["symbol"] == fresh_pilots["symbol"]
+    assert stored_pilots["subcarrier"] == fresh_pilots["subcarrier"]
+    # The pilots come from np.exp, whose last bit can differ between operating systems.
+    assert np.allclose(stored_pilots["re"], fresh_pilots["re"], rtol=0, atol=1e-12)
+    assert np.allclose(stored_pilots["im"], fresh_pilots["im"], rtol=0, atol=1e-12)
 
 
 def test_pilots_are_in_the_order_of_the_least_squares_estimate(cfg: Config) -> None:
