@@ -44,5 +44,12 @@ jobs:
           cmake --build build/cpp --parallel
       - name: Test
         run: ctest --test-dir build/cpp --output-on-failure
+      # The runners change from job to job, some have VNNI and some do not. 8-bit weights gave other
+      # results without it, so this case must not depend on which runner we get.
+      - name: Test on an emulated CPU without VNNI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user
+          qemu-x86_64 -cpu Haswell build/cpp/test_cnn_correction
 
   # Phase 5: add a job that deploys web/ to GitHub Pages on pushes to main.

@@ -278,14 +278,14 @@ the addition inside the model, one weight step size per layer and the full value
   runs. All convolutions run as `QLinearConv`, so in integers; the tests check this on the graph
   ONNX Runtime really executes, because the file alone does not show it.
 - **With 8-bit weights the result depends on the CPU.** The CI found this: the same file gave
-  -29.88 dB on its runner (an AMD EPYC 7763 without VNNI) where the laptop (with AVX-VNNI) gave
-  -30.92 dB, on 64 slots at 30 dB.
+  -29.88 dB on its runner where the laptop (with AVX-VNNI) gave -30.92 dB, on 64 slots at 30 dB.
   x86 CPUs without VNNI add pairs of products in 16 bits, where 8-bit weights can overflow. CPUs
   emulated with QEMU (Haswell, EPYC-Milan) reproduced the CI numbers exactly and changed 23 % of the
-  outputs. With 7-bit weights, the outputs are bit-identical on Windows, Linux and both emulated
-  CPUs, and the standard model loses at most 0.04 dB against 8 bits. A test compares a fingerprint
-  of the int8 output on the CPU the CI happens to run on. The emulated runs were made by hand and
-  are not in a script; other architectures were not tested.
+  outputs. With 7-bit weights, the outputs are bit-identical on Windows, Linux, both emulated CPUs
+  and the CI runners seen so far (AMD EPYC 7763 without VNNI, Intel Xeon 6975P-C with AVX-512 VNNI),
+  and the standard model loses at most 0.04 dB against 8 bits. The runners change from job to job,
+  so the CI also runs the C++ tests on an emulated Haswell. The comparison of 8-bit and 7-bit files
+  on emulated CPUs was made by hand and is not in a script. Other architectures were not tested.
 - **The naive way loses the gain at high SNR.** Only 0.07 dB remain at 30 dB. Moving the addition
   out and giving every filter its own step size brings back 0.93 dB, limiting the value range
   another 0.79 dB. In the naive model ONNX Runtime also leaves one convolution in floating point
@@ -314,8 +314,8 @@ their input. All 10,080 values per model are bit-identical, for FP32 and int8, a
 Haswell and EPYC-Milan CPUs. A build with AddressSanitizer and UndefinedBehaviorSanitizer runs clean.
 
 Both sides use the same library, so this checks the C++ wrapper and the data layout, not an
-independent implementation. The emulated and sanitizer runs were made by hand. The CI builds the C++
-code and runs its tests on every push; its runner so far was an AMD EPYC 7763 without VNNI.
+independent implementation. The sanitizer run was made by hand. The CI builds the C++ code and runs
+its tests on every push, on the CPU of the runner and again on an emulated Haswell without VNNI.
 
 ### Latency
 

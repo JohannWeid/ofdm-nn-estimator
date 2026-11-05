@@ -67,7 +67,7 @@ def test_fp32_vectors_belong_to_the_model(name: str) -> None:
 
 @pytest.mark.parametrize("name", MODEL_NAMES)
 def test_int8_vectors_are_bit_exact_on_this_cpu(name: str) -> None:
-    """The vectors come from a laptop with VNNI, the CI runner has none."""
+    """The vectors come from a laptop with AVX-VNNI, CI runners can have other CPUs."""
     expected = read(f"{name}_int8", 2)
     assert expected.shape == (N_SLOTS, 2, 14, 72)
     actual = run_slot_by_slot(MODELS / f"{name}_int8.onnx", read("input", 3))
