@@ -15,7 +15,13 @@ from onnx import numpy_helper  # noqa: E402
 from nn.config import load_nn_config  # noqa: E402
 from nn.estimator import OnnxEstimator  # noqa: E402
 from nn.export import INPUT_NAME  # noqa: E402
-from nn.quantize import calibration_input, ops_that_run, output_step, quantize  # noqa: E402
+from nn.quantize import (  # noqa: E402
+    calibration_input,
+    ops_that_run,
+    output_fingerprint,
+    output_step,
+    quantize,
+)
 from ofdm import LinkSimulator, load_config, sample_profiles  # noqa: E402
 from ofdm.config import Config  # noqa: E402
 from ofdm.estimators import InterpolationEstimator  # noqa: E402
@@ -26,6 +32,7 @@ MODELS = ROOT / "models"
 STANDARD = MODELS / "cnn_A_log_nmse.onnx"
 MODEL_NAMES = ["cnn_A_log_nmse", "cnn_A_small"]
 N_LAYERS = {"cnn_A_log_nmse": 4, "cnn_A_small": 3}
+FINGERPRINTS = {"cnn_A_log_nmse": "9f598b86a12068a2", "cnn_A_small": "4607b853918f6350"}
 
 
 def initializers(path: Path) -> dict[str, np.ndarray]:
@@ -133,8 +140,32 @@ def test_committed_int8_files_match_the_code(name: str, x_cal: np.ndarray, tmp_p
 
 
 @pytest.mark.parametrize("name", MODEL_NAMES)
+def test_int8_output_does_not_depend_on_the_cpu(name: str) -> None:
+    """The values come from a laptop with VNNI; the CI runner checks them on its own CPU.
+
+    8-bit weights fail this on x86 without VNNI. After retraining, scripts/export_onnx.py prints the
+    new values.
+    """
+    assert output_fingerprint(MODELS / f"{name}_int8.onnx") == FINGERPRINTS[name]
+
+
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_two_products_fit_into_16_bits(name: str) -> None:
+    """x86 without VNNI adds pairs of u8 * s8 products in 16 bits, see nn.quantize.quantize."""
+    for weights in int8_weights(MODELS / f"{name}_int8.onnx"):
+        assert 2 * 255 * np.abs(weights.astype(int)).max() <= 32767
+
+
+def test_eight_bit_weights_do_not_fit(x_cal: np.ndarray, tmp_path: Path) -> None:
+    """Otherwise the test above could not fail."""
+    path = tmp_path / "eight_bit.onnx"
+    quantize(STANDARD, path, x_cal, reduce_range=False)
+    assert 2 * 255 * max(np.abs(w.astype(int)).max() for w in int8_weights(path)) > 32767
+
+
+@pytest.mark.parametrize("name", MODEL_NAMES)
 def test_committed_int8_files_stay_close_to_fp32(name: str, x_cal: np.ndarray) -> None:
-    """Measured: 0.018 and 0.023. A second training run of the same model differs by 0.035."""
+    """Measured: 0.020 and 0.027. A second training run of the same model differs by 0.035."""
     x = x_cal[:100]
     error = run(MODELS / f"{name}_int8.onnx", x) - run(MODELS / f"{name}.onnx", x)
     assert np.sqrt(np.mean(error**2)) < 0.03

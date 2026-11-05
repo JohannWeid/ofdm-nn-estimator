@@ -3,7 +3,8 @@
 Part "percentile" decides how much of the activation range the int8 steps cover. It runs on
 validation slots, so that this choice does not touch the test data. Part "variants" compares the
 committed int8 models from scripts/export_onnx.py on the test slots of the README, together with
-the variants that show where the loss comes from.
+the variants that show where the loss comes from. Variants with 8-bit weights can give other
+results on an x86 CPU without VNNI, see nn.quantize.quantize.
 
 Examples:
     python scripts/compare_quantization.py
@@ -85,17 +86,20 @@ def compare_percentiles(sim, cfg, data, x_cal, work: Path, n_slots: int, out: Pa
 def compare_variants(sim, cfg, data, x_cal, work: Path, n_slots: int, out: Path) -> None:
     models = ROOT / "models"
     fp32 = models / f"{STANDARD}.onnx"
+    eight_bit = work / "eight_bit.onnx"
+    quantize(fp32, eight_bit, x_cal, reduce_range=False)
     min_max = work / "min_max.onnx"
     quantize(fp32, min_max, x_cal, percentile=None)
     whole = work / "whole.onnx"
     export_onnx(load_model(models / f"{STANDARD}.pt"), whole, whole_model=True)
     naive = work / "naive.onnx"
-    quantize(whole, naive, x_cal, percentile=None, per_channel=False)
+    quantize(whole, naive, x_cal, percentile=None, per_channel=False, reduce_range=False)
 
     estimators = {
         "LS + linear": InterpolationEstimator(sim.pattern, "linear"),
         "standard FP32": OnnxEstimator(fp32, sim.pattern),
         "standard int8": OnnxEstimator(models / f"{STANDARD}_int8.onnx", sim.pattern),
+        "standard int8, 8-bit": OnnxEstimator(eight_bit, sim.pattern),
         "standard int8, min/max": OnnxEstimator(min_max, sim.pattern),
         "standard int8, naive": WholeModelEstimator(naive, sim.pattern),
         "small FP32": OnnxEstimator(models / f"{SMALL}.onnx", sim.pattern),
@@ -103,6 +107,7 @@ def compare_variants(sim, cfg, data, x_cal, work: Path, n_slots: int, out: Path)
     }
     reference = {
         "standard int8": "standard FP32",
+        "standard int8, 8-bit": "standard FP32",
         "standard int8, min/max": "standard FP32",
         "standard int8, naive": "standard FP32",
         "small int8": "small FP32",
@@ -110,6 +115,7 @@ def compare_variants(sim, cfg, data, x_cal, work: Path, n_slots: int, out: Path)
     print("One int8 step at the output, and the operators that really run:")
     for label, path in (
         ("standard int8", models / f"{STANDARD}_int8.onnx"),
+        ("standard int8, 8-bit", eight_bit),
         ("standard int8, min/max", min_max),
         ("standard int8, naive", naive),
         ("small int8", models / f"{SMALL}_int8.onnx"),

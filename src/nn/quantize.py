@@ -9,6 +9,7 @@ impossible, clipping too much hurts at low SNR. scripts/compare_quantization.py 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import tempfile
 from collections import Counter
@@ -60,11 +61,16 @@ def quantize(
     calibration: np.ndarray,
     percentile: float | None = PERCENTILE,
     per_channel: bool = True,
+    reduce_range: bool = True,
 ) -> None:
     """Write an int8 copy of an ONNX model, calibrated on the network inputs in calibration.
 
     percentile is the share of activation values inside the int8 range. ONNX Runtime clips the rest
     evenly on both sides, so 99.95 clips 0.025 % at each end. None covers all values (min/max).
+
+    reduce_range limits the weights to 7 bits. x86 CPUs without VNNI add pairs of products in 16
+    bits, where 8-bit weights can overflow: the same file then gives different results on such a
+    CPU. With 7 bits the sum of two products fits, at most 2 * 255 * 64 = 32640.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +89,7 @@ def quantize(
                 _SingleBatch(input_name, calibration),
                 quant_format=QuantFormat.QDQ,
                 per_channel=per_channel,
+                reduce_range=reduce_range,
                 activation_type=QuantType.QInt8,
                 weight_type=QuantType.QInt8,
                 calibrate_method=method,
@@ -96,6 +103,15 @@ def output_step(onnx_path: str | Path) -> float:
     node = next(n for n in graph.node if graph.output[0].name in n.output)
     step = next(i for i in graph.initializer if i.name == node.input[1])
     return float(numpy_helper.to_array(step))
+
+
+def output_fingerprint(onnx_path: str | Path) -> str:
+    """Hash of the int8 output for a fixed random input. Must not depend on the CPU."""
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    x = np.random.default_rng(33).standard_normal((4, 3, 14, 72)).astype(np.float32)
+    y = session.run(None, {session.get_inputs()[0].name: x})[0]
+    steps = np.rint(y / output_step(onnx_path)).astype(np.int16)
+    return hashlib.sha256(steps.tobytes()).hexdigest()[:16]
 
 
 def ops_that_run(onnx_path: str | Path) -> dict[str, int]:

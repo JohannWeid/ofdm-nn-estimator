@@ -12,8 +12,8 @@ helps only below 10 dB SNR and is up to 1.2 dB *worse* than LS + linear at 15-20
 map traces this to Doppler: the CNN smooths the channel over time by a nearly fixed amount,
 whereas LMMSE adapts its smoothing to the channel. Ablations show that a tenth of the training
 data nearly suffices, and that a model with 5.7 times fewer operations costs only 0.2 dB SNR
-at that BER. Quantized to int8, the standard model loses at most 0.33 dB NMSE in region A and
-0.01 dB SNR at that BER.
+at that BER. Quantized to int8, the standard model loses at most 0.36 dB NMSE in region A and
+0.02 dB SNR at that BER, with identical output on every x86 CPU type tested.
 
 | Phase | Content | Status |
 |---|---|---|
@@ -252,37 +252,47 @@ step. Latency follows with the C++ inference.
 |---|---|---|---|---|---|---|---|---|
 | LS + linear | -1.57 | -11.53 | -21.25 | -29.20 | | 19.36 dB | 16.01 dB | |
 | Standard, FP32 | -7.87 | -16.86 | -24.56 | -31.34 | | 18.16 dB | 17.63 dB | 30.2 KB |
-| **Standard, int8** | **-7.56** | **-16.84** | **-24.48** | **-31.02** | **0.33 dB** | **18.17 dB** | **17.65 dB** | **16.5 KB** |
-| Standard, int8, full value range | -7.85 | -16.77 | -24.18 | -30.20 | 1.15 dB | 18.24 dB | 17.84 dB | |
+| **Standard, int8** | **-7.51** | **-16.80** | **-24.46** | **-30.99** | **0.36 dB** | **18.18 dB** | **17.66 dB** | **16.5 KB** |
+| Standard, int8, 8-bit weights | -7.56 | -16.84 | -24.48 | -31.02 | 0.33 dB | 18.17 dB | 17.65 dB | |
+| Standard, int8, full value range | -7.83 | -16.73 | -24.16 | -30.20 | 1.15 dB | 18.24 dB | 17.85 dB | |
 | Standard, int8, naive | -7.82 | -16.72 | -23.92 | -29.27 | 2.07 dB | 18.30 dB | 17.94 dB | |
 | Small, FP32 | -6.37 | -15.63 | -23.82 | -30.03 | | 18.37 dB | 18.15 dB | 10.6 KB |
-| Small, int8 | -6.15 | -15.47 | -23.32 | -29.29 | 0.77 dB | 18.49 dB | 18.17 dB | 9.3 KB |
+| Small, int8 | -6.12 | -15.44 | -23.21 | -28.31 | 1.72 dB | 18.50 dB | 18.40 dB | 9.3 KB |
 
 The largest loss is over all seven SNR points of region A, against the FP32 version of the same
-model. "Naive" means the addition inside the model, one weight step size per layer and the full
-value range.
+model. All int8 rows use 7-bit weights, except "8-bit weights" and "naive". The naive variant has
+the addition inside the model, one weight step size per layer and the full value range. Rows with
+8-bit weights hold for a CPU with VNNI, see below.
 
-- **Done carefully, int8 costs little.** The standard model keeps 1.82 of its 2.15 dB gain over
-  LS + linear at 30 dB. In region B it loses at most 0.14 dB, within the noise between training
+- **Done carefully, int8 costs little.** The standard model keeps 1.80 of its 2.15 dB gain over
+  LS + linear at 30 dB. In region B it loses at most 0.15 dB, within the noise between training
   runs. All convolutions run as `QLinearConv`, so in integers; the tests check this on the graph
   ONNX Runtime really executes, because the file alone does not show it.
+- **With 8-bit weights the result depends on the CPU.** The CI found this: the same file gave
+  -29.88 dB on its runner where the laptop (with AVX-VNNI) gave -30.92 dB, on 64 slots at 30 dB.
+  x86 CPUs without VNNI add pairs of products in 16 bits, where 8-bit weights can overflow. CPUs
+  emulated with QEMU (Haswell, EPYC-Milan) reproduced the CI numbers exactly and changed 23 % of the
+  outputs. With 7-bit weights, the outputs are bit-identical on Windows, Linux and both emulated
+  CPUs, and the standard model loses at most 0.04 dB against 8 bits. A test compares a fingerprint
+  of the int8 output on the CPU the CI happens to run on. The emulated runs were made by hand and
+  are not in a script; other architectures were not tested.
 - **The naive way loses the gain at high SNR.** Only 0.07 dB remain at 30 dB. Moving the addition
   out and giving every filter its own step size brings back 0.93 dB, limiting the value range
-  another 0.82 dB. In the naive model ONNX Runtime also leaves one convolution in floating point
+  another 0.79 dB. In the naive model ONNX Runtime also leaves one convolution in floating point
   without a warning; the cause was not investigated.
 - **The step size shows why.** At 30 dB the LS + linear error is about 0.025 per real or imaginary
   part. One step at the output is 0.026 with the full value range and 0.013 with the limited one.
   Rounding adds step^2 / 12 per part, which by calculation explains about half of the remaining
-  0.33 dB. The rest has to come from the rounding inside the network.
+  0.35 dB at 30 dB. The rest has to come from the rounding inside the network.
 - **The range is a compromise, chosen on validation slots.** Clipping rare values costs accuracy at
-  low SNR, where they occur: 0.32 dB at 0 dB, against 0.03 dB with the full range. Of five ranges
+  low SNR, where they occur: 0.36 dB at 0 dB, against 0.05 dB with the full range. Of five ranges
   ([`results/quantization_percentile.csv`](results/quantization_percentile.csv)), covering 99.95 %
-  of the values gives the smallest largest loss on validation slots: 0.33 dB, against 0.51 dB for
-  both 99.9 % and 99.995 %. The neighbouring 99.98 % is only 0.05 dB behind, so the exact value
-  should not be overread.
-- **The small model suffers more.** It loses up to 0.77 dB, and at 30 dB only 0.10 dB of its gain
-  over LS + linear remains. At a BER of 1e-2 it falls 0.32 dB behind the standard model, against
-  0.21 dB in FP32.
+  of the values gives the smallest largest loss on validation slots: 0.36 dB, against 0.55 dB for
+  99.9 % and 0.53 dB for 99.995 %. The neighbouring 99.98 % is only 0.05 dB behind, so the exact
+  value should not be overread.
+- **The small model cannot afford this.** It loses up to 1.72 dB and ends up 0.89 dB *worse* than
+  LS + linear at 30 dB. At a BER of 1e-2 it falls 0.32 dB behind the standard model, against 0.21 dB
+  in FP32. It is therefore no easy replacement if the standard model turns out too slow.
 
 ### Limitations
 
