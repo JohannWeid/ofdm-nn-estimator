@@ -26,5 +26,23 @@ jobs:
       - name: Test
         run: pytest
 
-  # Phase 4: add a job that builds cpp/ with CMake and runs the GoogleTest suite.
+  # Checks correctness only: latency numbers from a shared runner would mean nothing.
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show system
+        run: |
+          grep -m1 "model name" /proc/cpuinfo
+          grep -m1 -o -E "avx_vnni|avx512_vnni" /proc/cpuinfo || echo "no VNNI"
+          lsb_release -ds
+          g++ --version | head -1
+          cmake --version | head -1
+      - name: Build
+        run: |
+          cmake -S cpp -B build/cpp
+          cmake --build build/cpp --parallel
+      - name: Test
+        run: ctest --test-dir build/cpp --output-on-failure
+
   # Phase 5: add a job that deploys web/ to GitHub Pages on pushes to main.

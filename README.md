@@ -2,7 +2,7 @@
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
 > and its building blocks are tested in ablations. It is exported to ONNX, quantized to int8 and
-> runs in C++ within the slot time on a laptop; the C++ tests in the CI come next.
+> runs in C++ within the slot time on a laptop. A browser demo comes next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
@@ -21,9 +21,8 @@ receiver.
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
-| 4 | ONNX export, int8 quantization, C++ inference, latency | done |
-| 4 | Summary table, C++ tests in CI | next |
-| 5 | Browser demo on GitHub Pages | planned |
+| 4 | ONNX export, int8 quantization, C++ inference, latency, C++ tests in CI | done |
+| 5 | Browser demo on GitHub Pages | next |
 
 ## Method
 
@@ -101,8 +100,8 @@ python scripts/compare_quantization.py
 The C++ inference needs Linux on x86-64 (WSL works), see [`cpp/README.md`](cpp/README.md):
 
 ```bash
-cmake -S cpp -B ~/build/ofdm-cpp -G Ninja
-cmake --build ~/build/ofdm-cpp
+cmake -S cpp -B ~/build/ofdm-cpp
+cmake --build ~/build/ofdm-cpp --parallel
 ctest --test-dir ~/build/ofdm-cpp --output-on-failure
 ```
 
@@ -315,8 +314,8 @@ their input. All 10,080 values per model are bit-identical, for FP32 and int8, a
 Haswell and EPYC-Milan CPUs. A build with AddressSanitizer and UndefinedBehaviorSanitizer runs clean.
 
 Both sides use the same library, so this checks the C++ wrapper and the data layout, not an
-independent implementation. The emulated and sanitizer runs were made by hand, and the C++ tests are
-not in the CI yet.
+independent implementation. The emulated and sanitizer runs were made by hand. The CI builds the C++
+code and runs its tests on every push; its runner so far was an AMD EPYC 7763 without VNNI.
 
 ### Latency
 
@@ -338,17 +337,55 @@ in a Linux VM, on a laptop with an i7-1355U on mains power. Ranges show the thre
   15,000 runs. A VM on Windows gives no timing guarantee, so this tail says more about the system
   than about the network. A real-time system was not tested.
 - **int8 does not simply mean faster.** The standard model gains a factor of 1.5 against FP32, the
-  small one loses that much. The profiler of ONNX Runtime (by hand, in Python) shows why: an int8
-  layer takes 18-26 us almost regardless of its size, and 16 to 16 channels is even faster than 8 to
-  8. In FP32 the time grows with the size. So 5.7 times fewer operations save only about a quarter in
-  int8. The weights are not the cause: 7 bits, 8 bits and one step size per layer run equally fast.
+  small one loses that much. The profiler of ONNX Runtime shows why (`python scripts/latency_python.py`,
+  [`results/latency_layers_linux.csv`](results/latency_layers_linux.csv)): an int8 layer takes 21-31 us
+  almost regardless of its size, and 16 to 16 channels is even faster than 8 to 8. In FP32 the time
+  grows with the size. So 5.7 times fewer operations save only about a quarter in int8. The weights
+  are not the cause: in a run by hand, 7 bits, 8 bits and one step size per layer took the same time.
   What causes this floor inside ONNX Runtime was not investigated.
-- **The platform matters as much as the model.** The same int8 file takes 0.127 ms in Python on
-  Windows on the same laptop, against 0.088 ms in Python in WSL (FP32: 0.139 and 0.134 ms). The reason
-  was not investigated.
+- **The platform matters as much as the model.** In the same script, the int8 file takes 0.150 ms on
+  Windows on the same laptop and 0.096 ms in WSL, FP32 takes 0.163 and 0.156 ms. The reason was not
+  investigated.
+- **Sessions differ.** A second C++ session on the same day ([`results/latency_later.csv`](results/latency_later.csv))
+  was 7-16 % slower in the median, and one single run took 34 ms. The reason was not investigated.
+  Differences of that size between sessions should not be read as real.
 - **Which core ran is unknown.** The i7-1355U has 2 fast and 8 slow cores, but WSL hides them: all 12
   virtual CPUs give the same speed. Presumably Windows puts a single busy thread on a fast core. The
   run under load shows what happens without one.
+
+### From PyTorch to C++
+
+| Region A | File | Median per slot | p99 | NMSE at 30 dB | Largest NMSE loss | SNR for BER 1e-2 |
+|---|---|---|---|---|---|---|
+| FP32, PyTorch, Python on Windows | 24.8 KB | 0.222 ms | 0.70-0.84 ms | -31.34 dB | | 18.16 dB |
+| FP32, ONNX Runtime, Python on Windows | 30.2 KB | 0.163 ms | 0.38-0.45 ms | -31.34 dB | | 18.16 dB |
+| FP32, ONNX Runtime, C++ in WSL | 30.2 KB | 0.131 ms | 0.32-0.35 ms | -31.34 dB | | 18.16 dB |
+| **int8, ONNX Runtime, C++ in WSL** | **16.5 KB** | **0.081-0.085 ms** | **0.23-0.27 ms** | **-30.99 dB** | **0.36 dB** | **18.18 dB** |
+
+Standard model, one thread, network only. The two Python rows come from the later session, in which
+C++ was also slower, so read them against each other and not against the C++ rows.
+
+### What would change on embedded hardware
+
+All of this ran on a laptop, not on a DSP, an NPU or a baseband chip, and there are no measurements
+for such a target here. What can be said without one:
+
+- **Computing power.** The standard model needs 5.37 M multiply-accumulates per slot, so a target has
+  to sustain 5.4 G per second just to fill the whole slot with the network, and clearly more because
+  FFT, equalization and decoding share it. The small model needs 0.94 G per second, at the accuracy
+  cost shown above.
+- **Memory.** The int8 weights take 5,328 bytes, the 50 int32 biases 200 bytes. The largest activation
+  is 16 x 14 x 72 = 16,128 bytes, and a convolution needs its input and output at the same time, so
+  about 32 KB without further tricks, a quarter of FP32. The runtime is the bigger problem: ONNX
+  Runtime unpacks to 30 MB for this 16.5 KB model. A small target would need its own kernels.
+- **No floating point unit.** Only the correction is int8 here. The LS + linear estimate, the addition
+  and the conversion of the network's input and output are floating point, and they would need a
+  fixed-point format, probably wider than 8 bits.
+- **Other kernels, other results.** The CPU dependence of 8-bit weights and the floor per layer come
+  from the x86 kernels of ONNX Runtime. Another instruction set can saturate or round differently, so
+  accuracy has to be measured again on the target, not only speed.
+- **Timing.** Median and p99 say little about a hard deadline. That needs a real-time system and a
+  worst-case analysis, neither of which is part of this project.
 
 ### Limitations
 
