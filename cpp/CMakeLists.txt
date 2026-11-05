@@ -44,5 +44,15 @@ include(GoogleTest)
 add_executable(test_cnn_correction tests/test_cnn_correction.cpp)
 target_link_libraries(test_cnn_correction PRIVATE cnn_correction GTest::gtest_main)
 target_compile_options(test_cnn_correction PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(test_cnn_correction PRIVATE tests)
 target_compile_definitions(test_cnn_correction PRIVATE REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 gtest_discover_tests(test_cnn_correction)
+
+add_executable(bench_latency bench/bench_latency.cpp)
+target_link_libraries(bench_latency PRIVATE cnn_correction)
+target_compile_options(bench_latency PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(bench_latency PRIVATE tests)
+target_compile_definitions(bench_latency PRIVATE REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+# Only checks that the benchmark still runs; a real measurement is started by hand, see README.md.
+add_test(NAME bench_latency_runs
+         COMMAND bench_latency "${CMAKE_CURRENT_BINARY_DIR}/latency_smoke_test.csv" 10 1)

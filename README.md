@@ -2,7 +2,7 @@
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
 > and its building blocks are tested in ablations. It is exported to ONNX, quantized to int8 and
-> runs in C++; the latency measurement comes next.
+> runs in C++ within the slot time on a laptop; the C++ tests in the CI come next.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
@@ -13,14 +13,16 @@ map traces this to Doppler: the CNN smooths the channel over time by a nearly fi
 whereas LMMSE adapts its smoothing to the channel. Ablations show that a tenth of the training
 data nearly suffices, and that a model with 5.7 times fewer operations costs only 0.2 dB SNR
 at that BER. Quantized to int8, the standard model loses at most 0.36 dB NMSE in region A and
-0.02 dB SNR at that BER, with identical output on every x86 CPU type tested.
+0.02 dB SNR at that BER, with identical output on every x86 CPU type tested. In C++ it takes about
+0.085 ms per slot (median) on one thread of a laptop, 9 % of the 1 ms slot, without the rest of the
+receiver.
 
 | Phase | Content | Status |
 |---|---|---|
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
-| 4 | ONNX export, int8 quantization, C++ inference | done |
-| 4 | Latency, C++ tests in CI | next |
+| 4 | ONNX export, int8 quantization, C++ inference, latency | done |
+| 4 | Summary table, C++ tests in CI | next |
 | 5 | Browser demo on GitHub Pages | planned |
 
 ## Method
@@ -254,7 +256,7 @@ The same script quantizes both models with ONNX Runtime after training (static q
 format, no retraining), calibrated on 2,000 validation slots. `python scripts/compare_quantization.py`
 evaluates them on the test slots above. Only the correction is int8: adding it to the LS + linear
 estimate stays in floating point, so a purely integer receiver would need a wider format for that
-step. Latency follows with the C++ inference.
+step.
 
 | Region A: NMSE in dB | 0 dB | 10 dB | 20 dB | 30 dB | Largest NMSE loss | SNR for BER 1e-2 in A | SNR for BER 3e-2 in B | File |
 |---|---|---|---|---|---|---|---|---|
@@ -301,7 +303,8 @@ the addition inside the model, one weight step size per layer and the full value
   value should not be overread.
 - **The small model cannot afford this.** It loses up to 1.72 dB and ends up 0.89 dB *worse* than
   LS + linear at 30 dB. At a BER of 1e-2 it falls 0.32 dB behind the standard model, against 0.21 dB
-  in FP32. It is therefore no easy replacement if the standard model turns out too slow.
+  in FP32. In int8 it is also [barely faster](#latency), so it is no replacement for the standard
+  model.
 
 ### C++ inference
 
@@ -314,6 +317,38 @@ Haswell and EPYC-Milan CPUs. A build with AddressSanitizer and UndefinedBehavior
 Both sides use the same library, so this checks the C++ wrapper and the data layout, not an
 independent implementation. The emulated and sanitizer runs were made by hand, and the C++ tests are
 not in the CI yet.
+
+### Latency
+
+`taskset -c 2 ~/build/ofdm-cpp/bench_latency`, see [`cpp/README.md`](cpp/README.md): one thread, three
+repeats of 5,000 runs per model, for the network alone. A slot lasts 0.999 ms. Measured in WSL 2, so
+in a Linux VM, on a laptop with an i7-1355U on mains power. Ranges show the three repeats.
+
+| Per slot | Median | p95 | p99 | Largest | Runs over the slot (of 15,000) | All other CPUs busy: median | p99 | Runs over the slot |
+|---|---|---|---|---|---|---|---|---|
+| Standard, FP32 | 0.131 ms | 0.17 ms | 0.32-0.35 ms | 4.0 ms | 8 | 0.34 ms | 0.67-0.84 ms | 92 |
+| **Standard, int8** | **0.081-0.085 ms** | **0.10-0.11 ms** | **0.23-0.27 ms** | **3.5 ms** | **10** | **0.27 ms** | **0.51-0.63 ms** | **58** |
+| Small, FP32 | 0.041 ms | 0.05 ms | 0.10-0.13 ms | 0.58 ms | 0 | 0.07-0.12 ms | 0.20-0.32 ms | 21 |
+| Small, int8 | 0.063 ms | 0.08 ms | 0.16-0.18 ms | 1.4 ms | 4 | 0.16 ms | 0.35-0.77 ms | 65 |
+
+- **Well inside the slot on this laptop.** The int8 standard model needs 9 % of the slot in the
+  median, and with all other CPUs busy 27 %. FFT, interpolation, equalization and decoding share the
+  same slot and are not included.
+- **Not real-time.** Single runs exceed the slot, up to 3.5 ms for the int8 standard model, in 10 of
+  15,000 runs. A VM on Windows gives no timing guarantee, so this tail says more about the system
+  than about the network. A real-time system was not tested.
+- **int8 does not simply mean faster.** The standard model gains a factor of 1.5 against FP32, the
+  small one loses that much. The profiler of ONNX Runtime (by hand, in Python) shows why: an int8
+  layer takes 18-26 us almost regardless of its size, and 16 to 16 channels is even faster than 8 to
+  8. In FP32 the time grows with the size. So 5.7 times fewer operations save only about a quarter in
+  int8. The weights are not the cause: 7 bits, 8 bits and one step size per layer run equally fast.
+  What causes this floor inside ONNX Runtime was not investigated.
+- **The platform matters as much as the model.** The same int8 file takes 0.127 ms in Python on
+  Windows on the same laptop, against 0.088 ms in Python in WSL (FP32: 0.139 and 0.134 ms). The reason
+  was not investigated.
+- **Which core ran is unknown.** The i7-1355U has 2 fast and 8 slow cores, but WSL hides them: all 12
+  virtual CPUs give the same speed. Presumably Windows puts a single busy thread on a fast core. The
+  run under load shows what happens without one.
 
 ### Limitations
 

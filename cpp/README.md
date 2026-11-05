@@ -1,7 +1,7 @@
 # C++ inference (Phase 4)
 
 `CnnCorrection` runs the correction network from `models/*.onnx` through the ONNX Runtime C++ API,
-one slot at a time, FP32 or int8. A latency benchmark is still planned.
+one slot at a time, FP32 or int8. `bench_latency` measures how long that takes.
 
 It needs Linux on x86-64 (WSL works), a C++17 compiler, CMake 3.24 or newer and Ninja. CMake fetches
 ONNX Runtime and GoogleTest with fixed versions and checksums. In WSL, keep the build folder in the
@@ -12,6 +12,18 @@ cmake -S cpp -B ~/build/ofdm-cpp -G Ninja
 cmake --build ~/build/ofdm-cpp
 ctest --test-dir ~/build/ofdm-cpp --output-on-failure
 ```
+
+## Latency
+
+On a machine that is otherwise idle and on mains power, pinned to one virtual CPU. This writes
+`results/latency.csv`; other output files, runs per repeat and repeats can be given as arguments:
+
+```bash
+taskset -c 2 ~/build/ofdm-cpp/bench_latency
+```
+
+`results/latency_under_load.csv` comes from the same command to that file, with a busy loop
+(`while :; do :; done`) pinned to each of the other 11 virtual CPUs.
 
 ## Test vectors
 
