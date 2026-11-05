@@ -9,7 +9,7 @@ import pytest
 onnx = pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")
 
-from nn.web_data import int8_layers, link_data  # noqa: E402
+from nn.web_data import int8_layers, link_data, simulator_vector  # noqa: E402
 from ofdm.config import Config  # noqa: E402
 from ofdm.resource_grid import make_pilot_pattern  # noqa: E402
 
@@ -62,6 +62,30 @@ def test_link_file_matches_the_configuration(cfg: Config) -> None:
     # The pilots come from np.exp, whose last bit can differ between operating systems.
     assert np.allclose(stored_pilots["re"], fresh_pilots["re"], rtol=0, atol=1e-12)
     assert np.allclose(stored_pilots["im"], fresh_pilots["im"], rtol=0, atol=1e-12)
+
+
+def test_simulator_vector_belongs_to_the_simulator(cfg: Config) -> None:
+    """Fails if the simulator changes without running scripts/export_web_data.py again."""
+    path = ROOT / "web" / "tests" / "vectors" / "simulator_slot.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    fresh = simulator_vector(cfg)
+    assert stored["bits"] == fresh["bits"]
+    assert stored["alpha"] == fresh["alpha"]
+    assert stored["phi"] == fresh["phi"]
+    for name in ("tx_grid", "tx_signal", "rx_signal", "h_true", "rx_grid"):
+        for part in ("re", "im"):
+            assert np.allclose(stored[name][part], fresh[name][part], rtol=0, atol=1e-10), name
+    for example, fresh_example in zip(stored["pdp_examples"], fresh["pdp_examples"], strict=True):
+        assert np.allclose(example["pdp"], fresh_example["pdp"], rtol=0, atol=1e-12)
+
+
+def test_simulator_vector_is_consistent(cfg: Config) -> None:
+    """Noise-free and without inter-carrier interference, Y = H X must hold on every subcarrier."""
+    vector = simulator_vector(cfg, doppler_hz=0.0)
+    h = np.array(vector["h_true"]["re"]) + 1j * np.array(vector["h_true"]["im"])
+    x = np.array(vector["tx_grid"]["re"]) + 1j * np.array(vector["tx_grid"]["im"])
+    y = np.array(vector["rx_grid"]["re"]) + 1j * np.array(vector["rx_grid"]["im"])
+    assert np.abs(y - h * x).max() < 1e-9
 
 
 def test_pilots_are_in_the_order_of_the_least_squares_estimate(cfg: Config) -> None:

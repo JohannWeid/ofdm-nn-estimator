@@ -22,8 +22,8 @@ receiver.
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
 | 4 | ONNX export, int8 quantization, C++ inference, latency, C++ tests in CI | done |
-| 5 | Browser demo: int8 network in JavaScript | done |
-| 5 | Browser demo: simulator, page, GitHub Pages | next |
+| 5 | Browser demo: int8 network and simulator in JavaScript | done |
+| 5 | Browser demo: estimators, page, GitHub Pages | next |
 
 ## Method
 
@@ -418,7 +418,7 @@ src/nn/             training data, CNN model, training, estimator wrapper, expor
 models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest, test vectors in testdata/
-web/                int8 network in JavaScript; demo for GitHub Pages (Phase 5)
+web/                int8 network and simulator in JavaScript; demo for GitHub Pages (Phase 5)
 scripts/            entry points that produce results/
 results/            plots and tables
 .github/workflows/  CI

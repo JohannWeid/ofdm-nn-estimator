@@ -8,7 +8,16 @@ import numpy as np
 import onnx
 from onnx import numpy_helper
 
-from ofdm import Config
+from ofdm import Config, LinkSimulator
+from ofdm import ofdm as ofdm_mod
+from ofdm.channel import (
+    apply_channel,
+    exponential_pdp,
+    fixed_profiles,
+    frequency_response,
+    generate_taps,
+    pdp_matrix,
+)
 from ofdm.ofdm import subcarrier_bins
 from ofdm.resource_grid import make_pilot_pattern
 
@@ -78,6 +87,61 @@ def int8_layers(onnx_path: str | Path) -> dict:
             }
         )
     return {"input": first_input, "layers": layers}
+
+
+def _rounded(z: np.ndarray) -> dict:
+    """Complex array as two lists. 12 decimals keep the file small and hide last-bit differences."""
+    rounded = np.round(z, 12).ravel()
+    return {"re": rounded.real.tolist(), "im": rounded.imag.tolist()}
+
+
+def simulator_vector(
+    cfg: Config, seed: int = 106, delay_spread_us: float = 0.5, doppler_hz: float = 300.0
+) -> dict:
+    """One noise-free slot through the Python simulator, to compare the JavaScript one with.
+
+    The random numbers are part of the result, because JavaScript cannot reproduce NumPy's
+    generator: it gets the same bits and angles and has to produce the same signals.
+    """
+    sim = LinkSimulator(cfg)
+    rng = np.random.default_rng(seed)
+    bits, tx_grid, tx_signal = sim.transmit(1, rng)
+
+    profiles = fixed_profiles(delay_spread_us * 1e-6, doppler_hz, 1)
+    pdp = pdp_matrix(profiles, cfg.ofdm, cfg.channel)
+    state = rng.bit_generator.state
+    angle_shape = (1, pdp.shape[1], cfg.channel.n_sinusoids)
+    alpha = rng.uniform(0, 2 * np.pi, size=angle_shape)  # the same draws as in generate_taps
+    phi = rng.uniform(0, 2 * np.pi, size=angle_shape)
+    rng.bit_generator.state = state
+    realization = generate_taps(profiles, cfg.ofdm, cfg.channel, rng)
+    rx_signal = apply_channel(tx_signal, realization)
+
+    return {
+        "delay_spread_us": delay_spread_us,
+        "doppler_hz": doppler_hz,
+        "bits": bits.ravel().tolist(),
+        "alpha": alpha.ravel().tolist(),
+        "phi": phi.ravel().tolist(),
+        "pdp": pdp.ravel().tolist(),
+        "tx_grid": _rounded(tx_grid),
+        "tx_signal": _rounded(tx_signal),
+        "rx_signal": _rounded(rx_signal),
+        "h_true": _rounded(frequency_response(realization, cfg.ofdm)),
+        "rx_grid": _rounded(ofdm_mod.demodulate(rx_signal, cfg.ofdm)),
+        "pdp_examples": [
+            {
+                "delay_spread_us": tau,
+                "pdp": exponential_pdp(
+                    tau * 1e-6,
+                    cfg.ofdm.sample_period_s,
+                    cfg.channel.max_taps,
+                    cfg.channel.pdp_floor_db,
+                ).tolist(),
+            }
+            for tau in (0.0, 0.1, 0.6, 1.5, 10.0)
+        ],
+    }
 
 
 def link_data(cfg: Config) -> dict:
