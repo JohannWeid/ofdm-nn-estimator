@@ -269,7 +269,8 @@ the addition inside the model, one weight step size per layer and the full value
   runs. All convolutions run as `QLinearConv`, so in integers; the tests check this on the graph
   ONNX Runtime really executes, because the file alone does not show it.
 - **With 8-bit weights the result depends on the CPU.** The CI found this: the same file gave
-  -29.88 dB on its runner where the laptop (with AVX-VNNI) gave -30.92 dB, on 64 slots at 30 dB.
+  -29.88 dB on its runner (an AMD EPYC 7763 without VNNI) where the laptop (with AVX-VNNI) gave
+  -30.92 dB, on 64 slots at 30 dB.
   x86 CPUs without VNNI add pairs of products in 16 bits, where 8-bit weights can overflow. CPUs
   emulated with QEMU (Haswell, EPYC-Milan) reproduced the CI numbers exactly and changed 23 % of the
   outputs. With 7-bit weights, the outputs are bit-identical on Windows, Linux and both emulated
@@ -317,7 +318,7 @@ src/ofdm/           simulation, channel, baselines
 src/nn/             training data, CNN model, training, estimator wrapper, export, quantization
 models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
-cpp/                C++ inference, CMake, GoogleTest      (Phase 4)
+cpp/                test vectors in testdata/; C++ inference, CMake, GoogleTest (Phase 4)
 web/                demo for GitHub Pages                 (Phase 5)
 scripts/            entry points that produce results/
 results/            plots and tables

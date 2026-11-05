@@ -51,6 +51,14 @@ def export_onnx(
     )
 
 
+def run_slot_by_slot(onnx_path: str | Path, x: np.ndarray) -> np.ndarray:
+    """Output for each slot alone on one thread, the way the C++ code runs the model."""
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 1
+    session = ort.InferenceSession(str(onnx_path), options, providers=["CPUExecutionProvider"])
+    return np.concatenate([session.run(None, {INPUT_NAME: slot[None]})[0] for slot in x])
+
+
 def max_deviation(model: ResidualCNN, onnx_path: str | Path, x: np.ndarray) -> float:
     """Largest absolute difference between the PyTorch and the ONNX Runtime output for x."""
     with torch.inference_mode():
