@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { makeReceiver, receiveSlot } from "../js/estimators.js";
 import { makeLink, simulateSlot } from "../js/link.js";
 import { Random } from "../js/random.js";
+import { addSlot, makeTotals, summarize } from "../js/statistics.js";
 
 const REPO = new URL("../../", import.meta.url);
 
@@ -22,25 +23,13 @@ export function evaluate({ config, link, receiver }, regionName, snrDb, nSlots, 
   const region = config.regions[regionName];
   const random = new Random(seed);
   const draw = ([low, high]) => low + (high - low) * random.uniform();
-  const totals = { ls: { error: 0, bits: 0 }, cnn: { error: 0, bits: 0 } };
-  let channelEnergy = 0;
-  let nBits = 0;
+  const totals = makeTotals();
   for (let n = 0; n < nSlots; n++) {
     const delay = draw(region.delay_spread_us);
     const doppler = draw(region.doppler_hz);
-    const result = receiveSlot(receiver, simulateSlot(link, snrDb, delay, doppler, random), snrDb);
-    for (const name of ["ls", "cnn"]) {
-      totals[name].error += result[name].squaredError;
-      totals[name].bits += result[name].bitErrors;
-    }
-    channelEnergy += result.channelEnergy;
-    nBits += result.nBits;
+    addSlot(totals, receiveSlot(receiver, simulateSlot(link, snrDb, delay, doppler, random), snrDb));
   }
-  const summary = (total) => ({
-    nmseDb: 10 * Math.log10(total.error / channelEnergy),
-    ber: total.bits / nBits,
-  });
-  return { ls: summary(totals.ls), cnn: summary(totals.cnn) };
+  return summarize(totals);
 }
 
 // The results of the Python chain on the test slots of the README, by region, estimator and SNR.

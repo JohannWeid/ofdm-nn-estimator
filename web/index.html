@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neural OFDM channel estimation</title>
+    <meta
+      name="description"
+      content="A small int8 CNN refines a classical OFDM channel estimate, simulated live in your browser."
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Neural OFDM channel estimation</h1>
+        <p class="lead">
+          A radio receiver has to estimate the channel from a few known pilot symbols. A small
+          neural network with 5,378 parameters refines the classical estimate. Everything here is
+          simulated and computed on your device. Move the sliders: inside its training range the
+          network helps, outside it can make things worse.
+        </p>
+      </header>
+
+      <section class="controls" aria-label="Channel settings">
+        <div class="sliders">
+          <label for="snr">
+            <span class="slider-head"><span>Signal-to-noise ratio</span><output id="snr-value" for="snr"></output></span>
+            <input id="snr" type="range" min="0" max="30" step="1" value="15" />
+          </label>
+          <label for="delay">
+            <span class="slider-head"><span>Delay spread</span><output id="delay-value" for="delay"></output></span>
+            <input id="delay" type="range" min="0.1" max="1.5" step="0.1" value="0.3" />
+          </label>
+          <label for="doppler">
+            <span class="slider-head"><span>Doppler shift</span><output id="doppler-value" for="doppler"></output></span>
+            <input id="doppler" type="range" min="0" max="800" step="50" value="100" />
+          </label>
+        </div>
+        <div class="buttons">
+          <button id="preset-training" type="button">Training range</button>
+          <button id="preset-unseen" type="button">Unseen channels</button>
+          <button id="preset-fails" type="button">Where it fails</button>
+          <button id="new-slot" type="button">New random slots</button>
+        </div>
+        <p id="region-notice" class="status" role="status">
+          <span id="region-icon" class="status-icon" aria-hidden="true"></span>
+          <span id="region-text">Loading…</span>
+        </p>
+      </section>
+
+      <p id="failure" class="status" data-status="critical" hidden>
+        <span class="status-icon" aria-hidden="true">✕</span>
+        <span>This page could not start: <span id="failure-text"></span></span>
+      </p>
+      <noscript>
+        <p class="status" data-status="critical">This demo runs in JavaScript, which is switched off.</p>
+      </noscript>
+
+      <div id="result" class="result">
+        <section class="summary" aria-label="Results at these settings">
+          <div id="gain-tile" class="tile" data-status="neutral">
+            <h2>NMSE gain of the CNN over LS + linear</h2>
+            <p id="gain-value" class="hero">–</p>
+            <p class="tile-note">
+              <span id="gain-icon" class="status-icon" aria-hidden="true"></span>
+              <span id="gain-text">Waiting for the first slot.</span>
+            </p>
+            <p id="slot-count" class="tile-note muted"></p>
+          </div>
+          <table>
+            <caption>Mean over all slots at these settings</caption>
+            <thead>
+              <tr><th scope="col">Estimator</th><th scope="col">NMSE</th><th scope="col">Bit error rate</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">LS + linear</th><td id="nmse-ls">–</td><td id="ber-ls">–</td></tr>
+              <tr><th scope="row">CNN (int8)</th><td id="nmse-cnn">–</td><td id="ber-cnn">–</td></tr>
+              <tr><th scope="row">Perfect channel knowledge</th><td id="nmse-perfect">–</td><td id="ber-perfect">–</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section aria-labelledby="constellation-title">
+          <h2 id="constellation-title">What the receiver decides on, for one slot</h2>
+          <p class="section-note">
+            Received QPSK symbols after equalization with each channel estimate. A point in the wrong
+            quadrant is a wrong decision. Far-out points come from deep fades, where dividing by a
+            small channel value amplifies the noise, even with perfect channel knowledge.
+          </p>
+          <div class="constellations">
+            <figure>
+              <figcaption>LS + linear</figcaption>
+              <canvas id="constellation-ls" class="square" role="img"></canvas>
+              <p id="constellation-ls-note" class="muted small"></p>
+            </figure>
+            <figure>
+              <figcaption>CNN (int8)</figcaption>
+              <canvas id="constellation-cnn" class="square" role="img"></canvas>
+              <p id="constellation-cnn-note" class="muted small"></p>
+            </figure>
+            <figure>
+              <figcaption>Perfect channel knowledge</figcaption>
+              <canvas id="constellation-perfect" class="square" role="img"></canvas>
+              <p id="constellation-perfect-note" class="muted small"></p>
+            </figure>
+          </div>
+          <ul class="legend">
+            <li><span class="key key-dot"></span>Correct decision</li>
+            <li><span class="key key-cross" aria-hidden="true">✕</span>Wrong decision</li>
+            <li><span class="key key-ring"></span>Ideal QPSK point</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="channel-title">
+          <h2 id="channel-title">The channel over time and frequency, for the same slot</h2>
+          <p class="section-note">
+            Each picture shows 14 OFDM symbols from top to bottom and 72 subcarriers from left to right.
+          </p>
+          <div class="maps">
+            <figure><figcaption>True channel magnitude</figcaption><canvas id="map-truth" class="wide" role="img" aria-label="True channel magnitude over time and frequency"></canvas></figure>
+            <figure><figcaption>LS + linear estimate</figcaption><canvas id="map-ls" class="wide" role="img" aria-label="Magnitude of the LS plus linear estimate"></canvas></figure>
+            <figure><figcaption>CNN estimate</figcaption><canvas id="map-cnn" class="wide" role="img" aria-label="Magnitude of the CNN estimate"></canvas></figure>
+          </div>
+          <div class="scale"><span>0</span><canvas id="scale-magnitude" role="img" aria-label="Color scale of the channel magnitude"></canvas><span id="scale-magnitude-max"></span><span class="muted">magnitude</span></div>
+          <div class="maps two">
+            <figure><figcaption>Error of LS + linear</figcaption><canvas id="map-error-ls" class="wide" role="img" aria-label="Estimation error of LS plus linear"></canvas></figure>
+            <figure><figcaption>Error of the CNN</figcaption><canvas id="map-error-cnn" class="wide" role="img" aria-label="Estimation error of the CNN"></canvas></figure>
+          </div>
+          <div class="scale"><span>0</span><canvas id="scale-error" role="img" aria-label="Color scale of the estimation error"></canvas><span id="scale-error-max"></span><span class="muted">error magnitude</span></div>
+        </section>
+      </div>
+
+      <section class="notes" aria-labelledby="notes-title">
+        <h2 id="notes-title">How to read this</h2>
+        <ul>
+          <li>
+            <strong>Single slots vary.</strong> One slot can flatter or embarrass either estimator.
+            That is why the number at the top is a mean over many slots, as in the
+            <a href="https://github.com/JohannWeid/ofdm-nn-estimator#results">project's results</a>.
+          </li>
+          <li>
+            <strong>This is not the speed of a receiver.</strong> One slot takes
+            <span id="time-value">a few milliseconds</span> here, simulation included, in plain
+            JavaScript. The same network in C++ takes about 0.085 ms on a laptop.
+          </li>
+          <li>
+            <strong>The network gets the exact SNR.</strong> A real receiver would have to estimate
+            it. The simulation uses QPSK and is one simple channel model, not a measured channel.
+          </li>
+          <li>
+            <strong>Nothing leaves your device.</strong> There is no server behind this page, and it
+            sets no cookies. The network runs in
+            <a href="https://github.com/JohannWeid/ofdm-nn-estimator/blob/main/web/js/network.js">about 100 lines of JavaScript</a>,
+            which match ONNX Runtime bit for bit.
+          </li>
+        </ul>
+        <p>
+          <a href="https://github.com/JohannWeid/ofdm-nn-estimator">Code, method and results on GitHub</a>
+        </p>
+      </section>
+    </main>
+    <div id="tooltip" class="tooltip" role="status" hidden></div>
+  </body>
+</html>

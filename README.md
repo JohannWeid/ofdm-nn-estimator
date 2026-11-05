@@ -2,7 +2,8 @@
 
 > **Status: work in progress.** The CNN is trained and evaluated, its failure range is mapped
 > and its building blocks are tested in ablations. It is exported to ONNX, quantized to int8 and
-> runs in C++ within the slot time on a laptop. A browser demo comes next.
+> runs in C++ within the slot time on a laptop. A [browser demo](web/) is written and about to be
+> published.
 
 **Result so far:** On channels like its training data, a CNN with 5,378 parameters improves
 the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
@@ -22,8 +23,8 @@ receiver.
 | 2 | Link-level simulation, LS / spline / LMMSE baselines | done |
 | 3 | Neural estimator: data pipeline, model, training, evaluation, failure map, loss experiment, ablations | done |
 | 4 | ONNX export, int8 quantization, C++ inference, latency, C++ tests in CI | done |
-| 5 | Browser demo: simulator, receiver and int8 network in JavaScript | done |
-| 5 | Browser demo: page, GitHub Pages | next |
+| 5 | Browser demo: page, simulator, receiver and int8 network in JavaScript | done |
+| 5 | Browser demo: GitHub Pages | next |
 
 ## Method
 
@@ -421,7 +422,7 @@ src/nn/             training data, CNN model, training, estimator wrapper, expor
 models/             trained weights, ONNX exports and their int8 versions
 tests/              pytest
 cpp/                C++ inference, CMake, GoogleTest, test vectors in testdata/
-web/                simulator, receiver and int8 network in JavaScript; demo (Phase 5)
+web/                browser demo: page, simulator, receiver and int8 network in JavaScript
 scripts/            entry points that produce results/
 results/            plots and tables
 .github/workflows/  CI
