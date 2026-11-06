@@ -6,18 +6,69 @@ install.
 
 [![The browser demo: sliders for SNR, delay spread and Doppler, the gain of the CNN over LS + linear, and the received constellations](results/web_demo.png)](https://johannweid.github.io/ofdm-nn-estimator/)
 
-**Result:** On channels like its training data, a CNN with 5,378 parameters improves
-the LS + linear channel estimate by 5.3 dB NMSE at 10 dB SNR, which is 1.2 dB SNR at a BER
-of 1e-2 and 0.7 dB short of LMMSE with exact channel statistics. Its gain shrinks to 2.1 dB
-at 30 dB SNR. On channels it has never seen (larger delay spread, higher Doppler) it clearly
-helps only below 10 dB SNR and is up to 1.2 dB *worse* than LS + linear at 15-20 dB. A failure
-map traces this to Doppler: the CNN smooths the channel over time by a nearly fixed amount,
-whereas LMMSE adapts its smoothing to the channel. Ablations show that a tenth of the training
-data nearly suffices, and that a model with 5.7 times fewer operations costs only 0.2 dB SNR
-at that BER. Quantized to int8, the standard model loses at most 0.36 dB NMSE in region A and
-0.02 dB SNR at that BER, with identical output on every x86 CPU type tested. In C++ it takes about
-0.085 ms per slot (median) on one thread of a laptop, 9 % of the 1 ms slot, without the rest of the
-receiver.
+## What this project does
+
+When a phone and a base station talk, the radio signal bounces off buildings, arrives as several
+overlapping copies and changes as things move. To recover the data, the receiver has to know how the
+signal was distorted on its way. Working this out is called *channel estimation*.
+
+For this, the transmitter mixes a few known symbols, called pilots, into the data. At those positions
+the receiver can see the distortion directly, although with noise, and everywhere else it has to make
+a good guess. The classical way is simple: draw straight lines between the pilots ("LS + linear").
+
+This project adds a small neural network that cleans up that classical estimate, and follows it all
+the way to code that could run on real hardware:
+
+```
+bits -> transmitter -> radio channel + noise -> receiver: classical estimate -> neural network -> bits
+```
+
+It asks three questions:
+
+1. **Is the network better than the classical method?** Yes on channels like the ones it was trained
+   on. No on very different ones: where the channel changes quickly, it can be worse.
+2. **Does it survive simple arithmetic?** Small chips often work with 8-bit whole numbers instead of
+   floating-point numbers. Converted to those, the network loses very little.
+3. **Is it fast enough?** A receiver has 1 ms for each block of data. On one laptop core, the network
+   needs about a tenth of that, without the rest of the receiver.
+
+Everything is simulated. There is no real radio and no measured channel, and the speed was measured
+on a laptop, not on a chip for a receiver.
+
+### Terms used below
+
+| Term | Meaning |
+|---|---|
+| OFDM | The radio technique behind 4G, 5G and Wi-Fi: data travels on many narrow frequencies at once, called subcarriers. |
+| Slot | One block of data, here 14 time steps (OFDM symbols) on 72 subcarriers, 1 ms long. |
+| SNR | Signal strength compared with the noise, in dB. Higher is easier for the receiver. |
+| NMSE | The error of a channel estimate relative to the strength of the channel, in dB. Lower is better: 3 dB less is about half the error. |
+| BER | Bit error rate, the share of wrong bits. Lower is better. |
+| Delay spread | How far the echoes of the signal are spread out in time. |
+| Doppler | How quickly the channel changes, for example because someone is moving. |
+| LS + linear | The classical estimate: least squares at the pilots, straight lines in between. |
+| LMMSE | A much better classical estimate, given exact channel statistics that a real receiver would not have. Here it is a reference, not a competitor. |
+| FP32, int8 | 32-bit floating-point numbers, and the 8-bit whole numbers they are converted to. |
+
+## Results at a glance
+
+- **On channels like its training data, the network clearly helps.** A CNN with 5,378 parameters
+  lowers the NMSE of LS + linear by 5.3 dB at 10 dB SNR. The receiver then needs 1.2 dB less SNR for a
+  BER of 1e-2, and is 0.7 dB short of LMMSE with exact channel statistics. The gain shrinks to 2.1 dB
+  at 30 dB SNR.
+- **On channels it has never seen, it can make things worse.** With larger delay spread and higher
+  Doppler it clearly helps only below 10 dB SNR and is up to 1.2 dB *worse* than LS + linear at
+  15-20 dB. A failure map traces this to Doppler: the CNN smooths the channel over time by a nearly
+  fixed amount, whereas LMMSE adapts its smoothing to the channel.
+- **Little data and a small model go a long way.** A tenth of the training data nearly suffices, and a
+  model with 5.7 times fewer operations costs only 0.2 dB SNR at that BER.
+- **8-bit numbers cost little.** Quantized to int8, the standard model loses at most 0.36 dB NMSE on
+  channels like its training data and 0.02 dB SNR at that BER, with identical output on every x86 CPU
+  type tested.
+- **It is fast on a laptop.** In C++ it takes about 0.085 ms per slot (median) on one thread, 9 % of the
+  1 ms slot, without the rest of the receiver.
+
+## Project status
 
 | Phase | Content | Status |
 |---|---|---|
